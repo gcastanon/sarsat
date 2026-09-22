@@ -21,7 +21,7 @@ pytest -q
 
 Python 3.10+. The environment alone runs anywhere. Training needs a CUDA JAX, which
 means Linux or WSL2, plus a MAPX checkout: see
-[mapx_integration/README.md](mapx_integration/README.md) (steps 1-3, five minutes).
+[mapx_integration/README.md](mapx_integration/README.md) (its Setup section, five minutes).
 
 ## 2. What it simulates
 
