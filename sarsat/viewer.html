@@ -10,7 +10,7 @@
     --surface: #fcfcfb; --panel: #f3f2ee; --border: #d9d7cf;
     --ocean: #d6e3f0; --land: #e7e3d6; --grid: rgba(0,0,0,0.10);
     --text: #0b0b0b; --text-2: #52514e;
-    --sat: #2a78d6; --target: #eb6834; --captured: #1baf7a; --look: #eda100;
+    --sat: #2a78d6; --target: #eb6834; --captured: #1baf7a; --look: #eda100; --event: #b0279f;
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
@@ -18,7 +18,7 @@
       --surface: #1a1a19; --panel: #232322; --border: #3a3a37;
       --ocean: #172230; --land: #35362f; --grid: rgba(255,255,255,0.10);
       --text: #ffffff; --text-2: #c3c2b7;
-      --sat: #3987e5; --target: #d95926; --captured: #199e70; --look: #c98500;
+      --sat: #3987e5; --target: #d95926; --captured: #199e70; --look: #c98500; --event: #e056cf;
     }
   }
   :root[data-theme="dark"] {
@@ -26,7 +26,7 @@
     --surface: #1a1a19; --panel: #232322; --border: #3a3a37;
     --ocean: #172230; --land: #35362f; --grid: rgba(255,255,255,0.10);
     --text: #ffffff; --text-2: #c3c2b7;
-    --sat: #3987e5; --target: #d95926; --captured: #199e70; --look: #c98500;
+    --sat: #3987e5; --target: #d95926; --captured: #199e70; --look: #c98500; --event: #e056cf;
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--surface); color: var(--text);
@@ -63,6 +63,7 @@
   .battery div { height: 26px; background: var(--border); border-radius: 2px; position: relative; overflow: hidden; }
   .battery div i { position: absolute; left: 0; right: 0; bottom: 0; background: var(--sat); }
   .muted { color: var(--text-2); font-size: 12px; }
+  body:not(.has-events) .event-only { display: none; }
 </style>
 </head>
 <body>
@@ -97,6 +98,8 @@
       <div class="stat"><span>Targets imaged</span><b id="capturedLabel"></b></div>
       <div class="stat"><span>Return</span><b id="returnLabel"></b></div>
       <div class="stat"><span>Looks taken</span><b id="looksLabel"></b></div>
+      <div class="stat event-only"><span>Events open now</span><b id="eventsLabel"></b></div>
+      <div class="stat event-only"><span>Event targets missed</span><b id="missedLabel"></b></div>
       <div class="stat"><span>Mean battery</span><b id="batteryLabel"></b></div>
       <div class="battery" id="batteryBars"></div>
     </div>
@@ -105,12 +108,17 @@
       <label class="check"><input type="checkbox" id="showLooks" checked> looks</label>
       <label class="check"><input type="checkbox" id="showTargets" checked> targets</label>
       <label class="check"><input type="checkbox" id="showLabels" checked> labels</label>
+      <span class="event-only"><label class="check"><input type="checkbox" id="showUpcoming"> upcoming events</label>
+      <label class="check"><input type="checkbox" id="showMissed"> missed events</label></span>
       <div class="legend" style="margin-top:8px">
         <span class="swatch" style="background:var(--sat)"></span><span>satellite (sub-satellite point) and ground track</span>
         <span class="swatch sq" style="background:var(--look)"></span><span>active look: beam footprint, boresight ring and look direction (recent looks fade)</span>
         <span class="swatch sq" style="background:var(--captured)"></span><span>look that imaged a target</span>
         <span class="swatch" style="background:var(--target)"></span><span>target not yet imaged (larger dot = higher priority)</span>
         <span class="swatch" style="background:var(--captured)"></span><span>target imaged</span>
+        <span class="swatch event-only" style="background:var(--event)"></span><span class="event-only">event target, window open (pops up with a ring when it opens; shown only while open)</span>
+        <span class="swatch event-only" style="border:1.5px solid var(--event)"></span><span class="event-only">event not yet open (&ldquo;upcoming events&rdquo;)</span>
+        <span class="swatch event-only" style="background:var(--text-2);opacity:.4"></span><span class="event-only">event closed before it was imaged (&ldquo;missed events&rdquo;)</span>
       </div>
       <p class="muted" style="margin:8px 0 0">Space plays and pauses, arrow keys step. Hover a satellite or target for details; click the timeline to seek.</p>
     </div>
@@ -125,6 +133,10 @@ const LAND_MASK = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 
 // ------------------------------------------------------------------ derived data
 let T = 0, N = 0, M = 0, capturedStep, capturedBy, hitsAt, capturesAt, cumulative, looksBefore, capturedBefore, targetScale;
+// Time-windowed targets (sarsat.windows): an "event" target is one whose window is shorter
+// than the episode; it only exists on the map while its window is open.
+let isEvent = [], eventTargets = [], eventKey = [], pendingOpenAt = [];
+const POP = 3;   // steps over which a newly opened event's ring expands
 const TRAIL = 25, LOOK_TRAIL = 4;
 // Longitude jumps larger than this within one step are dateline or pole crossings: no line.
 const JUMP = 60;
@@ -151,6 +163,15 @@ function load(data) {
   const sortedPrio = D.targetPriority.slice().sort((a, b) => a - b);
   const medianPrio = sortedPrio[Math.floor(M / 2)] || 1;
   targetScale = D.targetPriority.map(p => Math.min(2.2, Math.max(1, Math.sqrt(p / medianPrio))));
+  const wo = D.targetWindowOpen, wc = D.targetWindowClose;
+  isEvent = new Array(M).fill(false); eventTargets = [];
+  if (wo && wc) for (let m = 0; m < M; m++) if (wo[m] > 1 || wc[m] < T) { isEvent[m] = true; eventTargets.push(m); }
+  // Targets sharing a window form one event (a hotspot cluster).
+  eventKey = eventTargets.map(m => wo[m] * 100000 + wc[m]);
+  // Event targets open and not yet imaged at each step, for the timeline band.
+  pendingOpenAt = new Array(T + 1).fill(0);
+  for (const m of eventTargets) for (let s = Math.max(0, wo[m]); s <= Math.min(T, wc[m]); s++) if (capturedStep[m] > s) pendingOpenAt[s]++;
+  document.body.classList.toggle("has-events", eventTargets.length > 0);
 
   document.getElementById("title").textContent = D.title;
   document.title = D.title;
@@ -202,6 +223,10 @@ function fromCsv(files) {   // files: {satellites, looks, targets, captures} -> 
   const seen = new Set();
   for (const [step, target] of data.captures.slice().sort((a, b) => a[0] - b[0])) {
     if (!seen.has(target)) { seen.add(target); data.reward[step - 1] += data.targetPriority[target]; }
+  }
+  if (targets.length && targets[0].window_open !== undefined) {
+    data.targetWindowOpen = targets.map(r => +r.window_open);
+    data.targetWindowClose = targets.map(r => +r.window_close);
   }
   return data;
 }
@@ -285,12 +310,47 @@ function draw() {
   // targets
   if (show("showTargets")) {
     const r = M > 2000 ? 1.5 : M > 500 ? 2 : 3;
+    const cEvent = css.getPropertyValue("--event"), cMuted = css.getPropertyValue("--text-2");
+    const wo = D.targetWindowOpen, wc = D.targetWindowClose;
+    const upcoming = show("showUpcoming"), missed = show("showMissed");
+    // Persistent targets (and anything already imaged) first, events on top.
     for (let m = 0; m < M; m++) {
-      const [lat, lon] = D.targetLatLon[m], done = capturedStep[m] <= t;
-      mctx.fillStyle = done ? cCaptured : cTarget;
-      mctx.globalAlpha = done ? 0.55 : 1;
+      const done = capturedStep[m] <= t;
+      if (isEvent[m] && !done) continue;
+      const [lat, lon] = D.targetLatLon[m];
+      mctx.globalAlpha = done ? 0.55 : 1; mctx.fillStyle = done ? cCaptured : cTarget;
       mctx.beginPath(); mctx.arc(X(lon), Y(lat), r * targetScale[m], 0, 2 * Math.PI); mctx.fill();
     }
+    for (const m of eventTargets) {
+      if (capturedStep[m] <= t) continue;
+      const [lat, lon] = D.targetLatLon[m], x = X(lon), y = Y(lat), rr = 1.6 * r * targetScale[m];
+      if (t < wo[m]) {            // not yet open: hidden unless asked for
+        if (!upcoming) continue;
+        mctx.globalAlpha = 0.5; mctx.strokeStyle = cEvent; mctx.lineWidth = 1;
+        mctx.beginPath(); mctx.arc(x, y, rr, 0, 2 * Math.PI); mctx.stroke(); continue;
+      }
+      if (t > wc[m]) {            // closed without being imaged: gone, unless asked for
+        if (!missed) continue;
+        mctx.globalAlpha = 0.35; mctx.fillStyle = cMuted;
+        mctx.beginPath(); mctx.arc(x, y, r * targetScale[m], 0, 2 * Math.PI); mctx.fill(); continue;
+      }
+      // open: solid, fading over the last few steps before the window closes
+      const left = wc[m] - t;
+      mctx.globalAlpha = left < POP ? 0.45 + 0.55 * (left + 1) / (POP + 1) : 1;
+      mctx.fillStyle = cEvent;
+      mctx.beginPath(); mctx.arc(x, y, rr, 0, 2 * Math.PI); mctx.fill();
+    }
+    // pop-up rings: one per event (cluster), expanding over the first steps after it opens
+    const ringed = new Set();
+    mctx.strokeStyle = cEvent; mctx.lineWidth = 2;
+    eventTargets.forEach((m, i) => {
+      const age = t - wo[m];
+      if (age < 0 || age >= POP || t > wc[m] || ringed.has(eventKey[i])) return;
+      ringed.add(eventKey[i]);
+      const [lat, lon] = D.targetLatLon[m];
+      mctx.globalAlpha = 1 - age / POP;
+      mctx.beginPath(); mctx.arc(X(lon), Y(lat), 10 + 8 * age, 0, 2 * Math.PI); mctx.stroke();
+    });
     mctx.globalAlpha = 1;
     // capture flashes: rings fading over the three steps after a capture
     for (let dt = 0; dt < 3; dt++) {
@@ -373,11 +433,21 @@ function drawTimeline() {
   tctx.fillStyle = css.getPropertyValue("--text-2"); tctx.font = "10px system-ui, sans-serif"; tctx.textBaseline = "middle"; tctx.textAlign = "right";
   [0, 0.5, 1].forEach(f => tctx.fillText((f * ymax).toFixed(2), pad.l - 4, py(f * ymax)));
   tctx.textAlign = "center"; tctx.textBaseline = "top";
-  tctx.fillText("cumulative return vs step", w / 2, h - pad.b + 4);
+  tctx.fillText(eventTargets.length ? "cumulative return vs step \u00b7 shaded: event targets open and not yet imaged"
+                                     : "cumulative return vs step", w / 2, h - pad.b + 4);
   tctx.strokeStyle = css.getPropertyValue("--captured"); tctx.lineWidth = 2; tctx.lineJoin = "round";
   tctx.beginPath(); tctx.moveTo(px(0), py(0));
   cumulative.forEach((v, i) => tctx.lineTo(px(i + 1), py(v)));
   tctx.stroke();
+  if (eventTargets.length) {   // band: event targets open and still pending at each step
+    const peak = Math.max(1, ...pendingOpenAt), bandH = Math.min(14, ph * 0.25);
+    tctx.fillStyle = css.getPropertyValue("--event"); tctx.globalAlpha = 0.35;
+    for (let s = 0; s < T; s++) {
+      const hh = bandH * pendingOpenAt[s + 1] / peak;
+      if (hh > 0) tctx.fillRect(px(s), pad.t + ph - hh, Math.max(1, px(s + 1) - px(s)), hh);
+    }
+    tctx.globalAlpha = 1;
+  }
   tctx.strokeStyle = css.getPropertyValue("--text"); tctx.lineWidth = 1;
   tctx.beginPath(); tctx.moveTo(px(state.step), pad.t); tctx.lineTo(px(state.step), pad.t + ph); tctx.stroke();
 }
@@ -390,6 +460,16 @@ function updatePanel() {
   document.getElementById("capturedLabel").textContent = `${capturedBefore[t]} / ${M}`;
   document.getElementById("returnLabel").textContent = (t ? cumulative[t - 1] : 0).toFixed(3);
   document.getElementById("looksLabel").textContent = looksBefore[t];
+  if (eventTargets.length) {
+    const wo = D.targetWindowOpen, wc = D.targetWindowClose, open = new Set(), openPending = new Set();
+    let missedTargets = 0;
+    eventTargets.forEach((m, i) => {
+      if (wo[m] <= t && t <= wc[m]) { open.add(eventKey[i]); if (capturedStep[m] > t) openPending.add(eventKey[i]); }
+      if (wc[m] < t && capturedStep[m] > wc[m]) missedTargets++;
+    });
+    document.getElementById("eventsLabel").textContent = `${open.size} (${openPending.size} with targets left)`;
+    document.getElementById("missedLabel").textContent = `${missedTargets} / ${eventTargets.length}`;
+  }
   const b = D.battery[t], mean = b.reduce((a, v) => a + v, 0) / N;
   document.getElementById("batteryLabel").textContent = `${(100 * mean).toFixed(0)}% (min ${(100 * Math.min(...b)).toFixed(0)}%)`;
   if (N <= 64) [...bars.children].forEach((d, n) => { d.firstChild.style.height = (100 * b[n]) + "%"; d.title = `satellite ${n}: ${(100 * b[n]).toFixed(0)}%`; });
@@ -417,7 +497,7 @@ document.addEventListener("keydown", e => {
   if (e.code === "ArrowRight") setStep(state.step + 1);
   if (e.code === "ArrowLeft") setStep(state.step - 1);
 });
-["showTrails", "showLooks", "showTargets", "showLabels"].forEach(id => document.getElementById(id).addEventListener("change", draw));
+["showTrails", "showLooks", "showTargets", "showLabels", "showUpcoming", "showMissed"].forEach(id => document.getElementById(id).addEventListener("change", draw));
 tl.addEventListener("click", e => { const r = tl.getBoundingClientRect(); setStep(Math.round((e.clientX - r.left - 36) / (tl.clientWidth - 46) * T)); });
 
 const tip = document.getElementById("tooltip");
@@ -437,6 +517,10 @@ map.addEventListener("mousemove", e => {
     const m = best[1], [lat, lon] = D.targetLatLon[m];
     text = `Target ${m} (${D.targetOnLand[m] ? "land" : "water"})\n${lat.toFixed(2)}°, ${lon.toFixed(2)}° · priority ${D.targetPriority[m]}\n`;
     text += capturedStep[m] === Infinity ? "never imaged" : capturedStep[m] <= t ? `imaged at step ${capturedStep[m]} by satellite ${capturedBy[m]}` : `imaged later (step ${capturedStep[m]})`;
+    if (isEvent[m]) {
+      const o = D.targetWindowOpen[m], c = D.targetWindowClose[m];
+      text += `\nevent window: steps ${o}–${c} (${t < o ? "opens in " + (o - t) : t > c ? "closed" : "open, " + (c - t) + " steps left"})`;
+    }
   }
   tip.textContent = text; tip.style.display = "block";
   tip.style.left = Math.min(mx + 12, r.width - 200) + "px"; tip.style.top = (my + 12) + "px";

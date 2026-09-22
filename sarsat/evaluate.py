@@ -16,7 +16,7 @@ import csv
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Dict, List, Tuple
+from typing import Any, Callable, Dict, List, Protocol, Tuple, Union
 
 import jax
 import jax.numpy as jnp
@@ -27,7 +27,27 @@ from sarsat.orbits import EARTH_RADIUS_KM, satellite_frames
 from sarsat.reference import REFERENCE_POLICIES
 from sarsat.types import Observation
 
-Policy = Callable[[Observation], jax.Array]
+PurePolicy = Callable[[Observation], jax.Array]
+
+
+class StatefulPolicy(Protocol):
+    """A policy that carries its own state across an episode (e.g. a recurrent actor).
+
+    Detected by duck typing (``hasattr(policy, "reset")``), not by ``isinstance``:
+    :meth:`reset` is called once before the episode and :meth:`__call__` once per step,
+    both un-jitted (any jitting is the policy's own responsibility), which is what makes
+    stepping a hidden state between calls possible. A plain function ``Observation ->
+    action`` keeps taking the jitted path.
+    """
+
+    def reset(self) -> None:
+        """Prepare for a fresh episode (e.g. zero a recurrent hidden state)."""
+
+    def __call__(self, obs: Any) -> jax.Array:
+        """The action for the step about to be taken, given the current observation."""
+
+
+Policy = Union[PurePolicy, StatefulPolicy, str]
 
 # ----------------------------------------------------------------------- policies
 
@@ -77,6 +97,7 @@ class EpisodeLog:
     target_priority: np.ndarray  # (M,)
     captures: np.ndarray  # (C, 3) rows of (step, target, satellite), step in 1..T
     reward: np.ndarray  # (T,)
+    target_window: np.ndarray | None = None  # (M, 2) int first/last step a target can be imaged
 
     @property
     def num_steps(self) -> int:
@@ -109,24 +130,36 @@ def _beam_directions(frame: np.ndarray, angles_deg: np.ndarray) -> np.ndarray:
 
 def run_episode(
     env: SarSat,
-    policy: Policy | str,
+    policy: Policy,
     seed: int = 0,
     num_targets: int | None = None,
 ) -> EpisodeLog:
     """Roll out one episode under a fixed seed and record it.
 
-    ``policy`` is either a function ``Observation -> action`` (a learned or scripted
-    agent) or the name of a :mod:`sarsat.reference` policy, which acts from the full
-    environment state and is built fresh for this episode.
+    ``policy`` is the name of a :mod:`sarsat.reference` policy (acts from the full
+    environment state and is built fresh for this episode), a plain function
+    ``Observation -> action`` (jitted for the rollout), or a :class:`StatefulPolicy`
+    (an object with ``reset()`` and ``__call__(obs) -> action``, e.g. a recurrent actor
+    carrying a hidden state; called un-jitted every step, any jitting being its own
+    business). ``env`` may be a plain :class:`SarSat`, a :class:`sarsat.windows.
+    WindowedSarSat` (whose ``state.target_window`` is then also recorded), or a
+    :class:`sarsat.coop.CoopSarSat` / ``WindowedCoopSarSat`` (whose observation is a
+    ``CoopObservation``; only a policy that understands it should be used with one).
     """
     state, timestep = jax.jit(env.reset)(jax.random.PRNGKey(seed), num_targets)
     num_targets = int(state.target_active.sum())
+    target_window = (
+        np.asarray(state.target_window)[:num_targets] if hasattr(state, "target_window") else None
+    )
 
     if isinstance(policy, str):
         from sarsat.reference import ReferenceController
 
         controller = ReferenceController(env, state, policy)
         act = lambda state, obs: controller(state)  # noqa: E731
+    elif hasattr(policy, "reset"):
+        policy.reset()
+        act = lambda state, obs: policy(obs)  # noqa: E731 (stateful: run un-jitted)
     else:
         act = jax.jit(lambda state, obs: policy(obs))
 
@@ -184,6 +217,7 @@ def run_episode(
         target_priority=np.asarray(state.target_priority)[:num_targets],
         captures=np.concatenate(captures) if captures else np.zeros((0, 3), int),
         reward=np.asarray(rewards),
+        target_window=target_window,
     )
 
 
@@ -273,9 +307,21 @@ def write_csv(log: EpisodeLog, out_dir: Path) -> List[Path]:
     captured_by = np.full(log.target_latlon.shape[0], -1)
     for step, target, sat in log.captures[::-1]:  # earliest capture, lowest satellite wins
         captured_step[target], captured_by[target] = step, sat
+    has_window = log.target_window is not None
+    targets_header = [
+        "target",
+        "lat_deg",
+        "lon_deg",
+        "on_land",
+        "priority",
+        "captured_step",
+        "captured_by",
+    ]
+    if has_window:
+        targets_header = [*targets_header, "window_open", "window_close"]
     targets = write(
         "targets.csv",
-        ["target", "lat_deg", "lon_deg", "on_land", "priority", "captured_step", "captured_by"],
+        targets_header,
         (
             [
                 m,
@@ -286,6 +332,7 @@ def write_csv(log: EpisodeLog, out_dir: Path) -> List[Path]:
                 captured_step[m],
                 captured_by[m],
             ]
+            + ([int(log.target_window[m, 0]), int(log.target_window[m, 1])] if has_window else [])
             for m in range(log.target_latlon.shape[0])
         ),
     )
@@ -349,6 +396,10 @@ def write_html(log: EpisodeLog, path: Path, title: str = "SarSat episode") -> Pa
         "captures": log.captures.tolist(),
         "reward": rounded(log.reward, 6),
     }
+    if log.target_window is not None:
+        window = log.target_window.astype(int)
+        data["targetWindowOpen"] = window[:, 0].tolist()
+        data["targetWindowClose"] = window[:, 1].tolist()
     html = _VIEWER_TEMPLATE.read_text().replace("/*EPISODE_DATA*/null", json.dumps(data))
     path = Path(path)
     path.write_text(html)
