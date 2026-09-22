@@ -1,0 +1,2445 @@
+{
+  "hotspots100": [
+    {
+      "label": "Random",
+      "kind": "reference",
+      "mean": 0.066522,
+      "std": 0.012134,
+      "min": 0.052,
+      "max": 0.094308,
+      "n": 16,
+      "beats_greedy_beam": null,
+      "per_seed": [
+        {
+          "seed": 1000,
+          "return": 0.094308
+        },
+        {
+          "seed": 1001,
+          "return": 0.068654
+        },
+        {
+          "seed": 1002,
+          "return": 0.058538
+        },
+        {
+          "seed": 1003,
+          "return": 0.062808
+        },
+        {
+          "seed": 1004,
+          "return": 0.059615
+        },
+        {
+          "seed": 1005,
+          "return": 0.067462
+        },
+        {
+          "seed": 1006,
+          "return": 0.059423
+        },
+        {
+          "seed": 1007,
+          "return": 0.058885
+        },
+        {
+          "seed": 1008,
+          "return": 0.088346
+        },
+        {
+          "seed": 1009,
+          "return": 0.056077
+        },
+        {
+          "seed": 1010,
+          "return": 0.085769
+        },
+        {
+          "seed": 1011,
+          "return": 0.062846
+        },
+        {
+          "seed": 1012,
+          "return": 0.052
+        },
+        {
+          "seed": 1013,
+          "return": 0.054038
+        },
+        {
+          "seed": 1014,
+          "return": 0.069385
+        },
+        {
+          "seed": 1015,
+          "return": 0.066192
+        }
+      ]
+    },
+    {
+      "label": "Greedy",
+      "kind": "reference",
+      "mean": 0.451731,
+      "std": 0.026357,
+      "min": 0.4045,
+      "max": 0.495346,
+      "n": 16,
+      "beats_greedy_beam": null,
+      "per_seed": [
+        {
+          "seed": 1000,
+          "return": 0.462308
+        },
+        {
+          "seed": 1001,
+          "return": 0.476077
+        },
+        {
+          "seed": 1002,
+          "return": 0.446615
+        },
+        {
+          "seed": 1003,
+          "return": 0.4065
+        },
+        {
+          "seed": 1004,
+          "return": 0.459654
+        },
+        {
+          "seed": 1005,
+          "return": 0.464192
+        },
+        {
+          "seed": 1006,
+          "return": 0.460885
+        },
+        {
+          "seed": 1007,
+          "return": 0.481077
+        },
+        {
+          "seed": 1008,
+          "return": 0.469192
+        },
+        {
+          "seed": 1009,
+          "return": 0.447308
+        },
+        {
+          "seed": 1010,
+          "return": 0.476346
+        },
+        {
+          "seed": 1011,
+          "return": 0.495346
+        },
+        {
+          "seed": 1012,
+          "return": 0.427423
+        },
+        {
+          "seed": 1013,
+          "return": 0.4045
+        },
+        {
+          "seed": 1014,
+          "return": 0.432423
+        },
+        {
+          "seed": 1015,
+          "return": 0.417846
+        }
+      ]
+    },
+    {
+      "label": "Greedy-Beam",
+      "kind": "reference",
+      "mean": 0.785459,
+      "std": 0.044095,
+      "min": 0.695538,
+      "max": 0.845462,
+      "n": 16,
+      "beats_greedy_beam": null,
+      "per_seed": [
+        {
+          "seed": 1000,
+          "return": 0.798885
+        },
+        {
+          "seed": 1001,
+          "return": 0.820231
+        },
+        {
+          "seed": 1002,
+          "return": 0.773423
+        },
+        {
+          "seed": 1003,
+          "return": 0.709077
+        },
+        {
+          "seed": 1004,
+          "return": 0.845462
+        },
+        {
+          "seed": 1005,
+          "return": 0.8275
+        },
+        {
+          "seed": 1006,
+          "return": 0.784615
+        },
+        {
+          "seed": 1007,
+          "return": 0.816462
+        },
+        {
+          "seed": 1008,
+          "return": 0.827038
+        },
+        {
+          "seed": 1009,
+          "return": 0.745885
+        },
+        {
+          "seed": 1010,
+          "return": 0.802231
+        },
+        {
+          "seed": 1011,
+          "return": 0.825692
+        },
+        {
+          "seed": 1012,
+          "return": 0.741154
+        },
+        {
+          "seed": 1013,
+          "return": 0.695538
+        },
+        {
+          "seed": 1014,
+          "return": 0.745231
+        },
+        {
+          "seed": 1015,
+          "return": 0.808923
+        }
+      ]
+    },
+    {
+      "label": "Solo-Plan",
+      "kind": "reference",
+      "mean": 0.806651,
+      "std": 0.038181,
+      "min": 0.723769,
+      "max": 0.8665,
+      "n": 16,
+      "beats_greedy_beam": null,
+      "per_seed": [
+        {
+          "seed": 1000,
+          "return": 0.825077
+        },
+        {
+          "seed": 1001,
+          "return": 0.832115
+        },
+        {
+          "seed": 1002,
+          "return": 0.807385
+        },
+        {
+          "seed": 1003,
+          "return": 0.739385
+        },
+        {
+          "seed": 1004,
+          "return": 0.8665
+        },
+        {
+          "seed": 1005,
+          "return": 0.851577
+        },
+        {
+          "seed": 1006,
+          "return": 0.798654
+        },
+        {
+          "seed": 1007,
+          "return": 0.830654
+        },
+        {
+          "seed": 1008,
+          "return": 0.826615
+        },
+        {
+          "seed": 1009,
+          "return": 0.766385
+        },
+        {
+          "seed": 1010,
+          "return": 0.810462
+        },
+        {
+          "seed": 1011,
+          "return": 0.835269
+        },
+        {
+          "seed": 1012,
+          "return": 0.776154
+        },
+        {
+          "seed": 1013,
+          "return": 0.723769
+        },
+        {
+          "seed": 1014,
+          "return": 0.786846
+        },
+        {
+          "seed": 1015,
+          "return": 0.829577
+        }
+      ]
+    },
+    {
+      "label": "Coop-Dedup",
+      "kind": "reference",
+      "mean": 0.788887,
+      "std": 0.042136,
+      "min": 0.699385,
+      "max": 0.843962,
+      "n": 16,
+      "beats_greedy_beam": null,
+      "per_seed": [
+        {
+          "seed": 1000,
+          "return": 0.805077
+        },
+        {
+          "seed": 1001,
+          "return": 0.819769
+        },
+        {
+          "seed": 1002,
+          "return": 0.779115
+        },
+        {
+          "seed": 1003,
+          "return": 0.714962
+        },
+        {
+          "seed": 1004,
+          "return": 0.843962
+        },
+        {
+          "seed": 1005,
+          "return": 0.828115
+        },
+        {
+          "seed": 1006,
+          "return": 0.791154
+        },
+        {
+          "seed": 1007,
+          "return": 0.817962
+        },
+        {
+          "seed": 1008,
+          "return": 0.825846
+        },
+        {
+          "seed": 1009,
+          "return": 0.753115
+        },
+        {
+          "seed": 1010,
+          "return": 0.805538
+        },
+        {
+          "seed": 1011,
+          "return": 0.829654
+        },
+        {
+          "seed": 1012,
+          "return": 0.746192
+        },
+        {
+          "seed": 1013,
+          "return": 0.699385
+        },
+        {
+          "seed": 1014,
+          "return": 0.752269
+        },
+        {
+          "seed": 1015,
+          "return": 0.810077
+        }
+      ]
+    },
+    {
+      "label": "Coop-Plan",
+      "kind": "reference",
+      "mean": 0.903904,
+      "std": 0.015271,
+      "min": 0.873731,
+      "max": 0.931269,
+      "n": 16,
+      "beats_greedy_beam": null,
+      "per_seed": [
+        {
+          "seed": 1000,
+          "return": 0.926962
+        },
+        {
+          "seed": 1001,
+          "return": 0.903769
+        },
+        {
+          "seed": 1002,
+          "return": 0.909423
+        },
+        {
+          "seed": 1003,
+          "return": 0.901731
+        },
+        {
+          "seed": 1004,
+          "return": 0.931269
+        },
+        {
+          "seed": 1005,
+          "return": 0.899654
+        },
+        {
+          "seed": 1006,
+          "return": 0.873731
+        },
+        {
+          "seed": 1007,
+          "return": 0.909231
+        },
+        {
+          "seed": 1008,
+          "return": 0.9085
+        },
+        {
+          "seed": 1009,
+          "return": 0.877385
+        },
+        {
+          "seed": 1010,
+          "return": 0.924846
+        },
+        {
+          "seed": 1011,
+          "return": 0.897308
+        },
+        {
+          "seed": 1012,
+          "return": 0.890462
+        },
+        {
+          "seed": 1013,
+          "return": 0.899769
+        },
+        {
+          "seed": 1014,
+          "return": 0.909423
+        },
+        {
+          "seed": 1015,
+          "return": 0.899
+        }
+      ]
+    },
+    {
+      "label": "MAPPO, team reward, slot-0 head",
+      "kind": "rl",
+      "mean": 0.846971,
+      "std": 0.020811,
+      "min": 0.802039,
+      "max": 0.883115,
+      "n": 16,
+      "beats_greedy_beam": "16/16",
+      "per_seed": [
+        {
+          "seed": 1000,
+          "return": 0.870269,
+          "greedy_beam": 0.798885,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1001,
+          "return": 0.844077,
+          "greedy_beam": 0.820231,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1002,
+          "return": 0.857577,
+          "greedy_beam": 0.773423,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1003,
+          "return": 0.854577,
+          "greedy_beam": 0.709077,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1004,
+          "return": 0.882423,
+          "greedy_beam": 0.845462,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1005,
+          "return": 0.839038,
+          "greedy_beam": 0.8275,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1006,
+          "return": 0.802039,
+          "greedy_beam": 0.784615,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1007,
+          "return": 0.848077,
+          "greedy_beam": 0.816462,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1008,
+          "return": 0.856116,
+          "greedy_beam": 0.827038,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1009,
+          "return": 0.814423,
+          "greedy_beam": 0.745885,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1010,
+          "return": 0.883115,
+          "greedy_beam": 0.802231,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1011,
+          "return": 0.843231,
+          "greedy_beam": 0.825692,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1012,
+          "return": 0.835461,
+          "greedy_beam": 0.741154,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1013,
+          "return": 0.846962,
+          "greedy_beam": 0.695538,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1014,
+          "return": 0.84327,
+          "greedy_beam": 0.745231,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1015,
+          "return": 0.830884,
+          "greedy_beam": 0.808923,
+          "beats_greedy_beam": true
+        }
+      ],
+      "run": "mappo_v1"
+    },
+    {
+      "label": "MAPPO, credit_mix 0.5 (from v1)",
+      "kind": "rl",
+      "mean": 0.890387,
+      "std": 0.016098,
+      "min": 0.858269,
+      "max": 0.92077,
+      "n": 16,
+      "beats_greedy_beam": "16/16",
+      "per_seed": [
+        {
+          "seed": 1000,
+          "return": 0.905615,
+          "greedy_beam": 0.798885,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1001,
+          "return": 0.888577,
+          "greedy_beam": 0.820231,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1002,
+          "return": 0.896731,
+          "greedy_beam": 0.773423,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1003,
+          "return": 0.896346,
+          "greedy_beam": 0.709077,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1004,
+          "return": 0.92077,
+          "greedy_beam": 0.845462,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1005,
+          "return": 0.878731,
+          "greedy_beam": 0.8275,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1006,
+          "return": 0.861884,
+          "greedy_beam": 0.784615,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1007,
+          "return": 0.895577,
+          "greedy_beam": 0.816462,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1008,
+          "return": 0.8975,
+          "greedy_beam": 0.827038,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1009,
+          "return": 0.858269,
+          "greedy_beam": 0.745885,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1010,
+          "return": 0.917154,
+          "greedy_beam": 0.802231,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1011,
+          "return": 0.886884,
+          "greedy_beam": 0.825692,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1012,
+          "return": 0.885461,
+          "greedy_beam": 0.741154,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1013,
+          "return": 0.882846,
+          "greedy_beam": 0.695538,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1014,
+          "return": 0.890154,
+          "greedy_beam": 0.745231,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1015,
+          "return": 0.883692,
+          "greedy_beam": 0.808923,
+          "beats_greedy_beam": true
+        }
+      ],
+      "run": "mappo_v3"
+    },
+    {
+      "label": "IPPO, credit_mix 0.5, slot-0 head",
+      "kind": "rl",
+      "mean": 0.893889,
+      "std": 0.016907,
+      "min": 0.860769,
+      "max": 0.925039,
+      "n": 16,
+      "beats_greedy_beam": "16/16",
+      "per_seed": [
+        {
+          "seed": 1000,
+          "return": 0.913308,
+          "greedy_beam": 0.798885,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1001,
+          "return": 0.891385,
+          "greedy_beam": 0.820231,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1002,
+          "return": 0.899462,
+          "greedy_beam": 0.773423,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1003,
+          "return": 0.902038,
+          "greedy_beam": 0.709077,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1004,
+          "return": 0.925039,
+          "greedy_beam": 0.845462,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1005,
+          "return": 0.8815,
+          "greedy_beam": 0.8275,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1006,
+          "return": 0.865538,
+          "greedy_beam": 0.784615,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1007,
+          "return": 0.898307,
+          "greedy_beam": 0.816462,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1008,
+          "return": 0.901499,
+          "greedy_beam": 0.827038,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1009,
+          "return": 0.860769,
+          "greedy_beam": 0.745885,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1010,
+          "return": 0.921154,
+          "greedy_beam": 0.802231,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1011,
+          "return": 0.891615,
+          "greedy_beam": 0.825692,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1012,
+          "return": 0.884385,
+          "greedy_beam": 0.741154,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1013,
+          "return": 0.885077,
+          "greedy_beam": 0.695538,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1014,
+          "return": 0.895692,
+          "greedy_beam": 0.745231,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1015,
+          "return": 0.885462,
+          "greedy_beam": 0.808923,
+          "beats_greedy_beam": true
+        }
+      ],
+      "run": "ippo_v4"
+    },
+    {
+      "label": "IPPO, credit_mix 0.5, slot-mixture head",
+      "kind": "rl",
+      "mean": 0.894796,
+      "std": 0.016854,
+      "min": 0.863346,
+      "max": 0.927961,
+      "n": 16,
+      "beats_greedy_beam": "16/16",
+      "per_seed": [
+        {
+          "seed": 1000,
+          "return": 0.9145,
+          "greedy_beam": 0.798885,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1001,
+          "return": 0.892423,
+          "greedy_beam": 0.820231,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1002,
+          "return": 0.899192,
+          "greedy_beam": 0.773423,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1003,
+          "return": 0.902692,
+          "greedy_beam": 0.709077,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1004,
+          "return": 0.927961,
+          "greedy_beam": 0.845462,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1005,
+          "return": 0.885269,
+          "greedy_beam": 0.8275,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1006,
+          "return": 0.864,
+          "greedy_beam": 0.784615,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1007,
+          "return": 0.894307,
+          "greedy_beam": 0.816462,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1008,
+          "return": 0.901654,
+          "greedy_beam": 0.827038,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1009,
+          "return": 0.863346,
+          "greedy_beam": 0.745885,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1010,
+          "return": 0.919923,
+          "greedy_beam": 0.802231,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1011,
+          "return": 0.892423,
+          "greedy_beam": 0.825692,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1012,
+          "return": 0.889654,
+          "greedy_beam": 0.741154,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1013,
+          "return": 0.882808,
+          "greedy_beam": 0.695538,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1014,
+          "return": 0.899692,
+          "greedy_beam": 0.745231,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1015,
+          "return": 0.886884,
+          "greedy_beam": 0.808923,
+          "beats_greedy_beam": true
+        }
+      ],
+      "run": "ippo_v5"
+    },
+    {
+      "label": "MAPPO, credit_mix 0.5, slot-mixture head",
+      "kind": "rl",
+      "mean": 0.897964,
+      "std": 0.016889,
+      "min": 0.866692,
+      "max": 0.928,
+      "n": 16,
+      "beats_greedy_beam": "16/16",
+      "per_seed": [
+        {
+          "seed": 1000,
+          "return": 0.918346,
+          "greedy_beam": 0.798885,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1001,
+          "return": 0.896808,
+          "greedy_beam": 0.820231,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1002,
+          "return": 0.903577,
+          "greedy_beam": 0.773423,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1003,
+          "return": 0.903346,
+          "greedy_beam": 0.709077,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1004,
+          "return": 0.928,
+          "greedy_beam": 0.845462,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1005,
+          "return": 0.887077,
+          "greedy_beam": 0.8275,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1006,
+          "return": 0.867615,
+          "greedy_beam": 0.784615,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1007,
+          "return": 0.906769,
+          "greedy_beam": 0.816462,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1008,
+          "return": 0.904346,
+          "greedy_beam": 0.827038,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1009,
+          "return": 0.866692,
+          "greedy_beam": 0.745885,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1010,
+          "return": 0.924846,
+          "greedy_beam": 0.802231,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1011,
+          "return": 0.895615,
+          "greedy_beam": 0.825692,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1012,
+          "return": 0.891,
+          "greedy_beam": 0.741154,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1013,
+          "return": 0.886384,
+          "greedy_beam": 0.695538,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1014,
+          "return": 0.9005,
+          "greedy_beam": 0.745231,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1015,
+          "return": 0.8865,
+          "greedy_beam": 0.808923,
+          "beats_greedy_beam": true
+        }
+      ],
+      "run": "mappo_v5"
+    },
+    {
+      "label": "MAPPO, credit_mix 0.5, slot-mixture, seed 11",
+      "kind": "rl",
+      "mean": 0.89449,
+      "std": 0.016624,
+      "min": 0.861962,
+      "max": 0.924346,
+      "n": 16,
+      "beats_greedy_beam": "16/16",
+      "per_seed": [
+        {
+          "seed": 1000,
+          "return": 0.912654,
+          "greedy_beam": 0.798885,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1001,
+          "return": 0.891885,
+          "greedy_beam": 0.820231,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1002,
+          "return": 0.899115,
+          "greedy_beam": 0.773423,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1003,
+          "return": 0.901654,
+          "greedy_beam": 0.709077,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1004,
+          "return": 0.924346,
+          "greedy_beam": 0.845462,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1005,
+          "return": 0.881846,
+          "greedy_beam": 0.8275,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1006,
+          "return": 0.864077,
+          "greedy_beam": 0.784615,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1007,
+          "return": 0.901154,
+          "greedy_beam": 0.816462,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1008,
+          "return": 0.899923,
+          "greedy_beam": 0.827038,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1009,
+          "return": 0.861962,
+          "greedy_beam": 0.745885,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1010,
+          "return": 0.921576,
+          "greedy_beam": 0.802231,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1011,
+          "return": 0.890231,
+          "greedy_beam": 0.825692,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1012,
+          "return": 0.888577,
+          "greedy_beam": 0.741154,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1013,
+          "return": 0.885385,
+          "greedy_beam": 0.695538,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1014,
+          "return": 0.897808,
+          "greedy_beam": 0.745231,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1015,
+          "return": 0.889654,
+          "greedy_beam": 0.808923,
+          "beats_greedy_beam": true
+        }
+      ],
+      "run": "h100_s11"
+    },
+    {
+      "label": "MAPPO, credit_mix 0.5, slot-mixture, seed 23",
+      "kind": "rl",
+      "mean": 0.895964,
+      "std": 0.016932,
+      "min": 0.864269,
+      "max": 0.927807,
+      "n": 16,
+      "beats_greedy_beam": "16/16",
+      "per_seed": [
+        {
+          "seed": 1000,
+          "return": 0.9155,
+          "greedy_beam": 0.798885,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1001,
+          "return": 0.895192,
+          "greedy_beam": 0.820231,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1002,
+          "return": 0.900038,
+          "greedy_beam": 0.773423,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1003,
+          "return": 0.904346,
+          "greedy_beam": 0.709077,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1004,
+          "return": 0.927807,
+          "greedy_beam": 0.845462,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1005,
+          "return": 0.884654,
+          "greedy_beam": 0.8275,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1006,
+          "return": 0.866153,
+          "greedy_beam": 0.784615,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1007,
+          "return": 0.899116,
+          "greedy_beam": 0.816462,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1008,
+          "return": 0.902577,
+          "greedy_beam": 0.827038,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1009,
+          "return": 0.864269,
+          "greedy_beam": 0.745885,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1010,
+          "return": 0.923654,
+          "greedy_beam": 0.802231,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1011,
+          "return": 0.892577,
+          "greedy_beam": 0.825692,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1012,
+          "return": 0.890846,
+          "greedy_beam": 0.741154,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1013,
+          "return": 0.882115,
+          "greedy_beam": 0.695538,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1014,
+          "return": 0.896346,
+          "greedy_beam": 0.745231,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1015,
+          "return": 0.89023,
+          "greedy_beam": 0.808923,
+          "beats_greedy_beam": true
+        }
+      ],
+      "run": "h100_s23"
+    },
+    {
+      "label": "MAPPO, credit_mix 0.5, 6 slots / 24-step look-ahead",
+      "kind": "rl",
+      "mean": 0.897887,
+      "std": 0.016861,
+      "min": 0.867115,
+      "max": 0.927769,
+      "n": 16,
+      "beats_greedy_beam": "16/16",
+      "per_seed": [
+        {
+          "seed": 1000,
+          "return": 0.918923,
+          "greedy_beam": 0.798885,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1001,
+          "return": 0.896692,
+          "greedy_beam": 0.820231,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1002,
+          "return": 0.902423,
+          "greedy_beam": 0.773423,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1003,
+          "return": 0.903423,
+          "greedy_beam": 0.709077,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1004,
+          "return": 0.927769,
+          "greedy_beam": 0.845462,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1005,
+          "return": 0.889231,
+          "greedy_beam": 0.8275,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1006,
+          "return": 0.867923,
+          "greedy_beam": 0.784615,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1007,
+          "return": 0.905692,
+          "greedy_beam": 0.816462,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1008,
+          "return": 0.904615,
+          "greedy_beam": 0.827038,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1009,
+          "return": 0.867115,
+          "greedy_beam": 0.745885,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1010,
+          "return": 0.925153,
+          "greedy_beam": 0.802231,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1011,
+          "return": 0.896385,
+          "greedy_beam": 0.825692,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1012,
+          "return": 0.889077,
+          "greedy_beam": 0.741154,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1013,
+          "return": 0.882192,
+          "greedy_beam": 0.695538,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1014,
+          "return": 0.899577,
+          "greedy_beam": 0.745231,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1015,
+          "return": 0.89,
+          "greedy_beam": 0.808923,
+          "beats_greedy_beam": true
+        }
+      ],
+      "run": "h100_wide"
+    },
+    {
+      "label": "MAPPO, v5 fine-tuned, credit_mix 0.25",
+      "kind": "rl",
+      "mean": 0.896473,
+      "std": 0.01656,
+      "min": 0.865346,
+      "max": 0.927038,
+      "n": 16,
+      "beats_greedy_beam": "16/16",
+      "per_seed": [
+        {
+          "seed": 1000,
+          "return": 0.915423,
+          "greedy_beam": 0.798885,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1001,
+          "return": 0.896231,
+          "greedy_beam": 0.820231,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1002,
+          "return": 0.902115,
+          "greedy_beam": 0.773423,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1003,
+          "return": 0.903192,
+          "greedy_beam": 0.709077,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1004,
+          "return": 0.927038,
+          "greedy_beam": 0.845462,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1005,
+          "return": 0.884115,
+          "greedy_beam": 0.8275,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1006,
+          "return": 0.867192,
+          "greedy_beam": 0.784615,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1007,
+          "return": 0.903231,
+          "greedy_beam": 0.816462,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1008,
+          "return": 0.902423,
+          "greedy_beam": 0.827038,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1009,
+          "return": 0.865346,
+          "greedy_beam": 0.745885,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1010,
+          "return": 0.922576,
+          "greedy_beam": 0.802231,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1011,
+          "return": 0.893731,
+          "greedy_beam": 0.825692,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1012,
+          "return": 0.889115,
+          "greedy_beam": 0.741154,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1013,
+          "return": 0.884692,
+          "greedy_beam": 0.695538,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1014,
+          "return": 0.899,
+          "greedy_beam": 0.745231,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1015,
+          "return": 0.888154,
+          "greedy_beam": 0.808923,
+          "beats_greedy_beam": true
+        }
+      ],
+      "run": "h100_ft"
+    }
+  ],
+  "events200": [
+    {
+      "label": "Random",
+      "kind": "reference",
+      "mean": 0.024998,
+      "std": 0.003173,
+      "min": 0.020769,
+      "max": 0.034346,
+      "n": 16,
+      "beats_greedy_beam": null,
+      "per_seed": [
+        {
+          "seed": 1000,
+          "return": 0.027692
+        },
+        {
+          "seed": 1001,
+          "return": 0.034346
+        },
+        {
+          "seed": 1002,
+          "return": 0.023154
+        },
+        {
+          "seed": 1003,
+          "return": 0.020769
+        },
+        {
+          "seed": 1004,
+          "return": 0.024808
+        },
+        {
+          "seed": 1005,
+          "return": 0.025346
+        },
+        {
+          "seed": 1006,
+          "return": 0.027231
+        },
+        {
+          "seed": 1007,
+          "return": 0.021423
+        },
+        {
+          "seed": 1008,
+          "return": 0.026885
+        },
+        {
+          "seed": 1009,
+          "return": 0.024692
+        },
+        {
+          "seed": 1010,
+          "return": 0.025885
+        },
+        {
+          "seed": 1011,
+          "return": 0.022962
+        },
+        {
+          "seed": 1012,
+          "return": 0.024923
+        },
+        {
+          "seed": 1013,
+          "return": 0.022346
+        },
+        {
+          "seed": 1014,
+          "return": 0.021692
+        },
+        {
+          "seed": 1015,
+          "return": 0.025808
+        }
+      ]
+    },
+    {
+      "label": "Greedy",
+      "kind": "reference",
+      "mean": 0.278572,
+      "std": 0.020487,
+      "min": 0.247154,
+      "max": 0.322885,
+      "n": 16,
+      "beats_greedy_beam": null,
+      "per_seed": [
+        {
+          "seed": 1000,
+          "return": 0.262769
+        },
+        {
+          "seed": 1001,
+          "return": 0.280923
+        },
+        {
+          "seed": 1002,
+          "return": 0.251923
+        },
+        {
+          "seed": 1003,
+          "return": 0.285385
+        },
+        {
+          "seed": 1004,
+          "return": 0.270692
+        },
+        {
+          "seed": 1005,
+          "return": 0.259577
+        },
+        {
+          "seed": 1006,
+          "return": 0.295269
+        },
+        {
+          "seed": 1007,
+          "return": 0.267962
+        },
+        {
+          "seed": 1008,
+          "return": 0.297808
+        },
+        {
+          "seed": 1009,
+          "return": 0.308231
+        },
+        {
+          "seed": 1010,
+          "return": 0.322885
+        },
+        {
+          "seed": 1011,
+          "return": 0.285615
+        },
+        {
+          "seed": 1012,
+          "return": 0.262654
+        },
+        {
+          "seed": 1013,
+          "return": 0.247154
+        },
+        {
+          "seed": 1014,
+          "return": 0.293038
+        },
+        {
+          "seed": 1015,
+          "return": 0.265269
+        }
+      ]
+    },
+    {
+      "label": "Greedy-Beam",
+      "kind": "reference",
+      "mean": 0.439579,
+      "std": 0.042678,
+      "min": 0.369231,
+      "max": 0.527692,
+      "n": 16,
+      "beats_greedy_beam": null,
+      "per_seed": [
+        {
+          "seed": 1000,
+          "return": 0.405154
+        },
+        {
+          "seed": 1001,
+          "return": 0.478231
+        },
+        {
+          "seed": 1002,
+          "return": 0.434038
+        },
+        {
+          "seed": 1003,
+          "return": 0.406692
+        },
+        {
+          "seed": 1004,
+          "return": 0.424462
+        },
+        {
+          "seed": 1005,
+          "return": 0.393923
+        },
+        {
+          "seed": 1006,
+          "return": 0.527692
+        },
+        {
+          "seed": 1007,
+          "return": 0.439654
+        },
+        {
+          "seed": 1008,
+          "return": 0.473769
+        },
+        {
+          "seed": 1009,
+          "return": 0.508385
+        },
+        {
+          "seed": 1010,
+          "return": 0.465923
+        },
+        {
+          "seed": 1011,
+          "return": 0.453962
+        },
+        {
+          "seed": 1012,
+          "return": 0.388923
+        },
+        {
+          "seed": 1013,
+          "return": 0.369231
+        },
+        {
+          "seed": 1014,
+          "return": 0.451962
+        },
+        {
+          "seed": 1015,
+          "return": 0.411269
+        }
+      ]
+    },
+    {
+      "label": "Solo-Plan",
+      "kind": "reference",
+      "mean": 0.449947,
+      "std": 0.042142,
+      "min": 0.384692,
+      "max": 0.5345,
+      "n": 16,
+      "beats_greedy_beam": null,
+      "per_seed": [
+        {
+          "seed": 1000,
+          "return": 0.423346
+        },
+        {
+          "seed": 1001,
+          "return": 0.480115
+        },
+        {
+          "seed": 1002,
+          "return": 0.438308
+        },
+        {
+          "seed": 1003,
+          "return": 0.438538
+        },
+        {
+          "seed": 1004,
+          "return": 0.452654
+        },
+        {
+          "seed": 1005,
+          "return": 0.384692
+        },
+        {
+          "seed": 1006,
+          "return": 0.5345
+        },
+        {
+          "seed": 1007,
+          "return": 0.441731
+        },
+        {
+          "seed": 1008,
+          "return": 0.471346
+        },
+        {
+          "seed": 1009,
+          "return": 0.5105
+        },
+        {
+          "seed": 1010,
+          "return": 0.501577
+        },
+        {
+          "seed": 1011,
+          "return": 0.460962
+        },
+        {
+          "seed": 1012,
+          "return": 0.394423
+        },
+        {
+          "seed": 1013,
+          "return": 0.385885
+        },
+        {
+          "seed": 1014,
+          "return": 0.459846
+        },
+        {
+          "seed": 1015,
+          "return": 0.420731
+        }
+      ]
+    },
+    {
+      "label": "Coop-Dedup",
+      "kind": "reference",
+      "mean": 0.452707,
+      "std": 0.043345,
+      "min": 0.378,
+      "max": 0.543538,
+      "n": 16,
+      "beats_greedy_beam": null,
+      "per_seed": [
+        {
+          "seed": 1000,
+          "return": 0.423423
+        },
+        {
+          "seed": 1001,
+          "return": 0.487846
+        },
+        {
+          "seed": 1002,
+          "return": 0.442
+        },
+        {
+          "seed": 1003,
+          "return": 0.420846
+        },
+        {
+          "seed": 1004,
+          "return": 0.442577
+        },
+        {
+          "seed": 1005,
+          "return": 0.400231
+        },
+        {
+          "seed": 1006,
+          "return": 0.543538
+        },
+        {
+          "seed": 1007,
+          "return": 0.450808
+        },
+        {
+          "seed": 1008,
+          "return": 0.476885
+        },
+        {
+          "seed": 1009,
+          "return": 0.528538
+        },
+        {
+          "seed": 1010,
+          "return": 0.481808
+        },
+        {
+          "seed": 1011,
+          "return": 0.459423
+        },
+        {
+          "seed": 1012,
+          "return": 0.403269
+        },
+        {
+          "seed": 1013,
+          "return": 0.378
+        },
+        {
+          "seed": 1014,
+          "return": 0.467462
+        },
+        {
+          "seed": 1015,
+          "return": 0.436654
+        }
+      ]
+    },
+    {
+      "label": "Coop-Plan",
+      "kind": "reference",
+      "mean": 0.670017,
+      "std": 0.04736,
+      "min": 0.587962,
+      "max": 0.756269,
+      "n": 16,
+      "beats_greedy_beam": null,
+      "per_seed": [
+        {
+          "seed": 1000,
+          "return": 0.675038
+        },
+        {
+          "seed": 1001,
+          "return": 0.679077
+        },
+        {
+          "seed": 1002,
+          "return": 0.617538
+        },
+        {
+          "seed": 1003,
+          "return": 0.699231
+        },
+        {
+          "seed": 1004,
+          "return": 0.690538
+        },
+        {
+          "seed": 1005,
+          "return": 0.587962
+        },
+        {
+          "seed": 1006,
+          "return": 0.756269
+        },
+        {
+          "seed": 1007,
+          "return": 0.6775
+        },
+        {
+          "seed": 1008,
+          "return": 0.672885
+        },
+        {
+          "seed": 1009,
+          "return": 0.751731
+        },
+        {
+          "seed": 1010,
+          "return": 0.7275
+        },
+        {
+          "seed": 1011,
+          "return": 0.628154
+        },
+        {
+          "seed": 1012,
+          "return": 0.624654
+        },
+        {
+          "seed": 1013,
+          "return": 0.660077
+        },
+        {
+          "seed": 1014,
+          "return": 0.661731
+        },
+        {
+          "seed": 1015,
+          "return": 0.610385
+        }
+      ]
+    },
+    {
+      "label": "IPPO, credit_mix 0.5",
+      "kind": "rl",
+      "mean": 0.645464,
+      "std": 0.04502,
+      "min": 0.570462,
+      "max": 0.7325,
+      "n": 16,
+      "beats_greedy_beam": "16/16",
+      "per_seed": [
+        {
+          "seed": 1000,
+          "return": 0.652885,
+          "greedy_beam": 0.405154,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1001,
+          "return": 0.656384,
+          "greedy_beam": 0.478231,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1002,
+          "return": 0.600384,
+          "greedy_beam": 0.434038,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1003,
+          "return": 0.666231,
+          "greedy_beam": 0.406692,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1004,
+          "return": 0.658385,
+          "greedy_beam": 0.424462,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1005,
+          "return": 0.570462,
+          "greedy_beam": 0.393923,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1006,
+          "return": 0.7325,
+          "greedy_beam": 0.527692,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1007,
+          "return": 0.646308,
+          "greedy_beam": 0.439654,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1008,
+          "return": 0.650385,
+          "greedy_beam": 0.473769,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1009,
+          "return": 0.727808,
+          "greedy_beam": 0.508385,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1010,
+          "return": 0.698846,
+          "greedy_beam": 0.465923,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1011,
+          "return": 0.613616,
+          "greedy_beam": 0.453962,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1012,
+          "return": 0.597115,
+          "greedy_beam": 0.388923,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1013,
+          "return": 0.632269,
+          "greedy_beam": 0.369231,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1014,
+          "return": 0.634192,
+          "greedy_beam": 0.451962,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1015,
+          "return": 0.589654,
+          "greedy_beam": 0.411269,
+          "beats_greedy_beam": true
+        }
+      ],
+      "run": "ev_ippo_a"
+    },
+    {
+      "label": "MAPPO, credit_mix 0.5",
+      "kind": "rl",
+      "mean": 0.645327,
+      "std": 0.046649,
+      "min": 0.568615,
+      "max": 0.732385,
+      "n": 16,
+      "beats_greedy_beam": "16/16",
+      "per_seed": [
+        {
+          "seed": 1000,
+          "return": 0.654808,
+          "greedy_beam": 0.405154,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1001,
+          "return": 0.659154,
+          "greedy_beam": 0.478231,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1002,
+          "return": 0.600462,
+          "greedy_beam": 0.434038,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1003,
+          "return": 0.667346,
+          "greedy_beam": 0.406692,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1004,
+          "return": 0.656385,
+          "greedy_beam": 0.424462,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1005,
+          "return": 0.568615,
+          "greedy_beam": 0.393923,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1006,
+          "return": 0.732385,
+          "greedy_beam": 0.527692,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1007,
+          "return": 0.644,
+          "greedy_beam": 0.439654,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1008,
+          "return": 0.644962,
+          "greedy_beam": 0.473769,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1009,
+          "return": 0.726308,
+          "greedy_beam": 0.508385,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1010,
+          "return": 0.708308,
+          "greedy_beam": 0.465923,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1011,
+          "return": 0.603308,
+          "greedy_beam": 0.453962,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1012,
+          "return": 0.592846,
+          "greedy_beam": 0.388923,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1013,
+          "return": 0.632308,
+          "greedy_beam": 0.369231,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1014,
+          "return": 0.645616,
+          "greedy_beam": 0.451962,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1015,
+          "return": 0.588423,
+          "greedy_beam": 0.411269,
+          "beats_greedy_beam": true
+        }
+      ],
+      "run": "ev_mappo_a"
+    },
+    {
+      "label": "MAPPO, credit_mix 0.1, look-ahead 48",
+      "kind": "rl",
+      "mean": 0.640906,
+      "std": 0.046124,
+      "min": 0.563654,
+      "max": 0.726846,
+      "n": 16,
+      "beats_greedy_beam": "16/16",
+      "per_seed": [
+        {
+          "seed": 1000,
+          "return": 0.652077,
+          "greedy_beam": 0.405154,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1001,
+          "return": 0.652115,
+          "greedy_beam": 0.478231,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1002,
+          "return": 0.596231,
+          "greedy_beam": 0.434038,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1003,
+          "return": 0.670116,
+          "greedy_beam": 0.406692,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1004,
+          "return": 0.656154,
+          "greedy_beam": 0.424462,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1005,
+          "return": 0.563654,
+          "greedy_beam": 0.393923,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1006,
+          "return": 0.726846,
+          "greedy_beam": 0.527692,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1007,
+          "return": 0.639423,
+          "greedy_beam": 0.439654,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1008,
+          "return": 0.639731,
+          "greedy_beam": 0.473769,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1009,
+          "return": 0.718231,
+          "greedy_beam": 0.508385,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1010,
+          "return": 0.701423,
+          "greedy_beam": 0.465923,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1011,
+          "return": 0.600154,
+          "greedy_beam": 0.453962,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1012,
+          "return": 0.588154,
+          "greedy_beam": 0.388923,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1013,
+          "return": 0.629423,
+          "greedy_beam": 0.369231,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1014,
+          "return": 0.635577,
+          "greedy_beam": 0.451962,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1015,
+          "return": 0.585192,
+          "greedy_beam": 0.411269,
+          "beats_greedy_beam": true
+        }
+      ],
+      "run": "ev_mappo_c"
+    },
+    {
+      "label": "MAPPO, credit_mix 0.1",
+      "kind": "rl",
+      "mean": 0.647952,
+      "std": 0.046983,
+      "min": 0.570577,
+      "max": 0.733308,
+      "n": 16,
+      "beats_greedy_beam": "16/16",
+      "per_seed": [
+        {
+          "seed": 1000,
+          "return": 0.658615,
+          "greedy_beam": 0.405154,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1001,
+          "return": 0.663731,
+          "greedy_beam": 0.478231,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1002,
+          "return": 0.600462,
+          "greedy_beam": 0.434038,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1003,
+          "return": 0.672692,
+          "greedy_beam": 0.406692,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1004,
+          "return": 0.665039,
+          "greedy_beam": 0.424462,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1005,
+          "return": 0.570577,
+          "greedy_beam": 0.393923,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1006,
+          "return": 0.733308,
+          "greedy_beam": 0.527692,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1007,
+          "return": 0.652077,
+          "greedy_beam": 0.439654,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1008,
+          "return": 0.650961,
+          "greedy_beam": 0.473769,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1009,
+          "return": 0.727192,
+          "greedy_beam": 0.508385,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1010,
+          "return": 0.709577,
+          "greedy_beam": 0.465923,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1011,
+          "return": 0.608115,
+          "greedy_beam": 0.453962,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1012,
+          "return": 0.591846,
+          "greedy_beam": 0.388923,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1013,
+          "return": 0.634346,
+          "greedy_beam": 0.369231,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1014,
+          "return": 0.639269,
+          "greedy_beam": 0.451962,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1015,
+          "return": 0.589423,
+          "greedy_beam": 0.411269,
+          "beats_greedy_beam": true
+        }
+      ],
+      "run": "ev_mappo_d"
+    },
+    {
+      "label": "MAPPO, credit_mix 0.25, gamma 0.998 / lambda 0.98",
+      "kind": "rl",
+      "mean": 0.649168,
+      "std": 0.047667,
+      "min": 0.572808,
+      "max": 0.737539,
+      "n": 16,
+      "beats_greedy_beam": "16/16",
+      "per_seed": [
+        {
+          "seed": 1000,
+          "return": 0.658039,
+          "greedy_beam": 0.405154,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1001,
+          "return": 0.660115,
+          "greedy_beam": 0.478231,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1002,
+          "return": 0.598654,
+          "greedy_beam": 0.434038,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1003,
+          "return": 0.677962,
+          "greedy_beam": 0.406692,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1004,
+          "return": 0.666423,
+          "greedy_beam": 0.424462,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1005,
+          "return": 0.572808,
+          "greedy_beam": 0.393923,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1006,
+          "return": 0.737539,
+          "greedy_beam": 0.527692,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1007,
+          "return": 0.651077,
+          "greedy_beam": 0.439654,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1008,
+          "return": 0.651231,
+          "greedy_beam": 0.473769,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1009,
+          "return": 0.731231,
+          "greedy_beam": 0.508385,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1010,
+          "return": 0.713154,
+          "greedy_beam": 0.465923,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1011,
+          "return": 0.608846,
+          "greedy_beam": 0.453962,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1012,
+          "return": 0.598808,
+          "greedy_beam": 0.388923,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1013,
+          "return": 0.634808,
+          "greedy_beam": 0.369231,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1014,
+          "return": 0.635538,
+          "greedy_beam": 0.451962,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1015,
+          "return": 0.590461,
+          "greedy_beam": 0.411269,
+          "beats_greedy_beam": true
+        }
+      ],
+      "run": "ev_mappo_e"
+    }
+  ],
+  "_notes": []
+}

@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SarSat MARL Results</title>
+<style>
+
+:root {
+  --accent: #2b6cb0;
+  --accent-dark: #1a4971;
+  --bg: #f7f8fa;
+  --stage-bg: #ffffff;
+  --fg: #1a202c;
+  --fg-muted: #4a5568;
+  --border: #d8dee6;
+  --row-alt: #f0f4f9;
+  --best-bg: #eaf3ff;
+  --coop-bg: #fff6e5;
+  --good: #1a7a3c;
+}
+* { box-sizing: border-box; }
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+body {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.stage-wrap {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  min-height: 0;
+}
+.stage {
+  position: relative;
+  width: 1280px;
+  height: 720px;
+  background: var(--stage-bg);
+  box-shadow: 0 10px 40px rgba(20, 30, 50, 0.18);
+  border-radius: 6px;
+  flex: 0 0 auto;
+  transform-origin: center center;
+}
+.slide {
+  position: absolute;
+  inset: 0;
+  display: none;
+  flex-direction: column;
+  padding: 0;
+}
+.slide.active { display: flex; }
+.slide-inner {
+  flex: 1 1 auto;
+  padding: 40px 68px 14px 68px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.kicker {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 4px;
+}
+.slide h1 {
+  font-size: 33px;
+  margin: 0 0 14px 0;
+  color: var(--fg);
+  font-weight: 700;
+  border-bottom: 3px solid var(--accent);
+  padding-bottom: 10px;
+}
+.slide-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.one-liner {
+  font-size: 19px;
+  color: var(--fg-muted);
+  margin: 0 0 16px 0;
+  line-height: 1.4;
+}
+.best-sentence {
+  font-size: 21px;
+  background: var(--best-bg);
+  border-left: 5px solid var(--accent);
+  padding: 14px 18px;
+  border-radius: 4px;
+  margin: 0 0 20px 0;
+  line-height: 1.45;
+}
+.slide-footer {
+  flex: 0 0 auto;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 68px 18px 68px;
+  font-size: 13px;
+  color: var(--fg-muted);
+  border-top: 1px solid var(--border);
+}
+
+/* Tables */
+.table-scroll {
+  max-height: 470px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+thead th {
+  position: sticky;
+  top: 0;
+  background: var(--accent);
+  color: #fff;
+  text-align: left;
+  padding: 4px 14px;
+  font-weight: 600;
+  z-index: 1;
+}
+tbody td {
+  padding: 2px 14px;
+  line-height: 1.25;
+  border-bottom: 1px solid var(--border);
+}
+tbody tr:nth-child(even) { background: var(--row-alt); }
+tbody tr.best-rl { background: var(--best-bg); font-weight: 700; }
+tbody tr.coop-plan { background: var(--coop-bg); font-weight: 700; }
+.badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 1px 6px;
+  border-radius: 3px;
+  margin-right: 8px;
+  vertical-align: middle;
+}
+.badge-rl { background: var(--accent); color: #fff; }
+.badge-ref { background: #d8dee6; color: var(--fg-muted); }
+.legend {
+  font-size: 14px;
+  color: var(--fg-muted);
+  margin: 10px 0 0 0;
+}
+.swatch {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  vertical-align: middle;
+  margin-right: 4px;
+}
+.swatch.best-rl { background: var(--best-bg); border: 1px solid var(--accent); }
+.swatch.coop-plan { background: var(--coop-bg); border: 1px solid #c8961e; }
+
+/* Bullets */
+ul.bullets {
+  font-size: 19px;
+  line-height: 1.5;
+  margin: 0;
+  padding-left: 24px;
+}
+ul.bullets.tight { font-size: 17px; line-height: 1.42; }
+ul.bullets li { margin-bottom: 10px; }
+code {
+  background: #eef1f5;
+  border-radius: 3px;
+  padding: 1px 5px;
+  font-size: 0.92em;
+  font-family: "SF Mono", Consolas, monospace;
+}
+
+/* Columns */
+.col-wrap {
+  display: flex;
+  gap: 28px;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.col-wrap .col {
+  flex: 1 1 0;
+  background: #fbfcfd;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px 20px;
+  overflow-y: auto;
+}
+.col h3 {
+  margin: 0 0 10px 0;
+  font-size: 19px;
+  color: var(--accent-dark);
+  border-bottom: 2px solid var(--border);
+  padding-bottom: 6px;
+}
+
+/* Architecture diagram */
+.arch-wrap {
+  display: flex;
+  gap: 22px;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  overflow: hidden;
+}
+.arch-flow {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  flex: 0 1 auto;
+}
+.arch-box {
+  border: 2px solid var(--accent);
+  border-radius: 7px;
+  background: #fbfdff;
+  padding: 4px 14px;
+  font-size: 13.5px;
+  text-align: center;
+  color: var(--fg);
+  min-width: 200px;
+}
+.arch-box.small { min-width: 140px; font-weight: 700; }
+.arch-box.wide { min-width: 660px; }
+.arch-box.head { border-color: var(--accent-dark); background: var(--best-bg); }
+.arch-box .arch-title {
+  font-weight: 700;
+  color: var(--accent-dark);
+  font-size: 14.5px;
+  margin-bottom: 2px;
+}
+.arch-box .arch-sub {
+  font-size: 12px;
+  color: var(--fg-muted);
+  line-height: 1.22;
+}
+.arch-arrow {
+  color: var(--accent);
+  font-size: 13px;
+  line-height: 1;
+}
+.arch-skip {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.arch-skip .arch-box.gru { min-width: 220px; }
+.arch-skip-rail {
+  position: absolute;
+  right: -34px;
+  top: -6px;
+  bottom: -6px;
+  width: 20px;
+  border: 3px solid var(--accent);
+  border-left: none;
+  border-radius: 0 10px 10px 0;
+}
+.arch-skip-label {
+  position: absolute;
+  right: -142px;
+  top: 50%;
+  transform: translateY(-50%) rotate(0deg);
+  font-size: 11.5px;
+  color: var(--fg-muted);
+  width: 110px;
+  line-height: 1.25;
+}
+.arch-critic {
+  border: 2px dashed var(--accent-dark);
+  border-radius: 8px;
+  padding: 16px 20px;
+  background: #fbfcfd;
+  min-width: 220px;
+  max-width: 260px;
+}
+.arch-critic .arch-title {
+  font-weight: 700;
+  color: var(--accent-dark);
+  font-size: 17px;
+  margin-bottom: 8px;
+}
+.arch-critic .arch-sub {
+  font-size: 14px;
+  color: var(--fg-muted);
+  margin-bottom: 8px;
+  line-height: 1.4;
+}
+.arch-note {
+  font-size: 12.5px;
+  color: var(--fg-muted);
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+  margin-top: 4px;
+  line-height: 1.35;
+}
+
+/* Controls (outside the scaled stage) */
+.controls {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 10px 0;
+  background: var(--bg);
+}
+.controls button {
+  font-size: 15px;
+  padding: 8px 18px;
+  border-radius: 20px;
+  border: 1px solid var(--accent);
+  background: #fff;
+  color: var(--accent);
+  cursor: pointer;
+  font-weight: 600;
+}
+.controls button:hover { background: var(--accent); color: #fff; }
+.controls button:disabled {
+  opacity: 0.4;
+  cursor: default;
+  background: #fff;
+  color: var(--accent);
+}
+.controls .counter {
+  font-size: 15px;
+  color: var(--fg-muted);
+  min-width: 64px;
+  text-align: center;
+}
+
+/* Print: one slide per page, no chrome, no scaling, all rows visible */
+@media print {
+  html, body { height: auto; overflow: visible; background: #fff; }
+  .controls { display: none; }
+  .stage-wrap { display: block; overflow: visible; }
+  .stage {
+    position: static;
+    width: auto;
+    height: auto;
+    box-shadow: none;
+    transform: none !important;
+    border-radius: 0;
+  }
+  .slide {
+    position: static;
+    display: flex !important;
+    width: 100%;
+    height: 100vh;
+    page-break-after: always;
+  }
+  .table-scroll { max-height: none !important; overflow: visible !important; }
+}
+
+</style>
+</head>
+<body>
+  <div class="stage-wrap" id="stageWrap">
+    <div class="stage" id="stage">
+      
+<section class="slide" id="slide-1" data-index="1">
+  <div class="slide-inner">
+    <div class="kicker">100-Agent Non-Windowed</div>
+    <h1>100-Agent Non-Windowed: Summary</h1>
+    <div class="slide-body">
+      <p class="one-liner"><strong>sarsat-100sat-hotspots</strong>: 100 satellites, 10 Walker planes, 6000 background targets + 40 hotspots × 50 targets at 10× priority, 180 steps, 20% duty cycle.</p><div class="table-scroll"><table id="table-hot"><thead><tr><th>Policy</th><th>Mean ± std</th><th>Min</th><th>Max</th><th>Beats Greedy-Beam</th></tr></thead><tbody><tr><td><span class="badge badge-ref">ref</span>Random</td><td>0.067 ± 0.012</td><td>0.052</td><td>0.094</td><td>—</td></tr><tr><td><span class="badge badge-ref">ref</span>Greedy</td><td>0.452 ± 0.026</td><td>0.405</td><td>0.495</td><td>—</td></tr><tr><td><span class="badge badge-ref">ref</span>Greedy-Beam</td><td>0.785 ± 0.044</td><td>0.696</td><td>0.845</td><td>—</td></tr><tr><td><span class="badge badge-ref">ref</span>Solo-Plan</td><td>0.807 ± 0.038</td><td>0.724</td><td>0.867</td><td>—</td></tr><tr><td><span class="badge badge-ref">ref</span>Coop-Dedup</td><td>0.789 ± 0.042</td><td>0.699</td><td>0.844</td><td>—</td></tr><tr class="coop-plan"><td><span class="badge badge-ref">ref</span>Coop-Plan</td><td>0.904 ± 0.015</td><td>0.874</td><td>0.931</td><td>—</td></tr><tr><td><span class="badge badge-rl">RL</span>MAPPO, team reward, slot-0 head</td><td>0.847 ± 0.021</td><td>0.802</td><td>0.883</td><td>16/16</td></tr><tr><td><span class="badge badge-rl">RL</span>MAPPO, credit_mix 0.5 (from v1)</td><td>0.890 ± 0.016</td><td>0.858</td><td>0.921</td><td>16/16</td></tr><tr><td><span class="badge badge-rl">RL</span>IPPO, credit_mix 0.5, slot-0 head</td><td>0.894 ± 0.017</td><td>0.861</td><td>0.925</td><td>16/16</td></tr><tr><td><span class="badge badge-rl">RL</span>IPPO, credit_mix 0.5, slot-mixture head</td><td>0.895 ± 0.017</td><td>0.863</td><td>0.928</td><td>16/16</td></tr><tr class="best-rl"><td><span class="badge badge-rl">RL</span>MAPPO, credit_mix 0.5, slot-mixture head</td><td>0.898 ± 0.017</td><td>0.867</td><td>0.928</td><td>16/16</td></tr><tr><td><span class="badge badge-rl">RL</span>MAPPO, credit_mix 0.5, slot-mixture, seed 11</td><td>0.894 ± 0.017</td><td>0.862</td><td>0.924</td><td>16/16</td></tr><tr><td><span class="badge badge-rl">RL</span>MAPPO, credit_mix 0.5, slot-mixture, seed 23</td><td>0.896 ± 0.017</td><td>0.864</td><td>0.928</td><td>16/16</td></tr><tr><td><span class="badge badge-rl">RL</span>MAPPO, credit_mix 0.5, 6 slots / 24-step look-ahead</td><td>0.898 ± 0.017</td><td>0.867</td><td>0.928</td><td>16/16</td></tr><tr><td><span class="badge badge-rl">RL</span>MAPPO, v5 fine-tuned, credit_mix 0.25</td><td>0.896 ± 0.017</td><td>0.865</td><td>0.927</td><td>16/16</td></tr></tbody></table></div><p class="legend"><span class="swatch best-rl"></span> best RL row &nbsp;&nbsp; <span class="swatch coop-plan"></span> Coop-Plan (centralised reference; sees the full state and every satellite's future access) &nbsp;&nbsp; mean &plusmn; std over test seeds 1000&ndash;1015, greedy actions<br><strong>Every RL agent beats Greedy-Beam on 16/16 seeds; the best is within 0.006 of Coop-Plan (a statistical tie), not above it.</strong></p>
+    </div>
+  </div>
+  <div class="slide-footer">
+    <span class="footer-text">SarSat MARL — 2026-09-22</span>
+    <span class="footer-page">1 / 10</span>
+  </div>
+</section>
+
+
+<section class="slide" id="slide-2" data-index="2">
+  <div class="slide-inner">
+    <div class="kicker">100-Agent</div>
+    <h1>100-Agent: Best RL Approach</h1>
+    <div class="slide-body">
+      <p class="best-sentence"><strong>MAPPO, credit_mix 0.5, slot-mixture head</strong> is the best RL row: mean <strong>0.898</strong> over 16 seeds (16/16 beat Greedy-Beam), within 0.006 of Coop-Plan's 0.904. Five independent runs (three seeds, a wider observation, a fine-tune) all land at 0.894–0.898: level with Coop-Plan within noise, not above it. Held-out validation seeds 2000–2015 agree: 0.909 vs Coop-Plan 0.914, beating it on 2 of 16.</p><div class="col-wrap cols-3"><div class="col"><h3>System</h3><ul class="bullets tight"><li>MAPPO (<code>rec_mappo</code>, MAPX) with shared parameters over 100 agents</li>
+<li><code>CoopSarSat</code> observation (ranked beam-value slots + cluster look-ahead)</li>
+<li>Slot-mixture anchored head; <code>credit_mix</code> 0.5</li>
+<li>32 envs × 180-step rollouts, 4 epochs × 4 minibatches</li>
+<li>Clip 0.1, gamma 0.995, lambda 0.95</li>
+<li>Actor 3e-4 / critic 5e-4, linear LR decay</li>
+<li>GRU 128, recurrent chunks of 30</li></ul></div><div class="col"><h3>What it learned</h3><ul class="bullets tight"><li>Rations battery toward hotspots rather than spending it all on background</li>
+<li>Learns beam-aware pointing and side/sense choices, not just “aim somewhere”</li></ul></div><div class="col"><h3>What remains</h3><ul class="bullets tight"><li>Same-step duplicate captures ≈ 1.4% of the return (two agents take one beam)</li>
+<li>Battery still ends episodes partly unspent</li></ul></div></div>
+    </div>
+  </div>
+  <div class="slide-footer">
+    <span class="footer-text">SarSat MARL — 2026-09-22</span>
+    <span class="footer-page">2 / 10</span>
+  </div>
+</section>
+
+
+<section class="slide" id="slide-3" data-index="3">
+  <div class="slide-inner">
+    <div class="kicker">100-Agent</div>
+    <h1>100-Agent: Architecture</h1>
+    <div class="slide-body">
+      
+<div class="arch-wrap">
+  <div class="arch-flow">
+    <div class="arch-box small">obs 69</div>
+    <div class="arch-arrow">&#9660;</div>
+    <div class="arch-box wide">
+      <div class="arch-title">SarSatTorso</div>
+      <div class="arch-sub">shared Dense(32) per slot × 4</div>
+      <div class="arch-sub">shared Dense(64) over look-ahead</div>
+      <div class="arch-sub">+ self features</div>
+    </div>
+    <div class="arch-arrow">&#9660;</div>
+    <div class="arch-box">MLP 256 &rarr; 128 + LayerNorm</div>
+    <div class="arch-arrow">&#9660;</div>
+    <div class="arch-skip">
+      <div class="arch-box gru">GRU 128</div>
+      <div class="arch-skip-rail" aria-hidden="true"></div>
+      <div class="arch-skip-label">skip connection around GRU</div>
+    </div>
+    <div class="arch-arrow">&#9660;</div>
+    <div class="arch-box">MLP 128</div>
+    <div class="arch-arrow">&#9660;</div>
+    <div class="arch-box wide head">
+      <div class="arch-title">SlotMixtureHead</div>
+      <div class="arch-sub">categorical over 4 slots (latent, marginalised in log-prob)</div>
+      <div class="arch-sub">&times; tanh-Gaussian pointing around chosen slot (mean =
+        atanh(slot pointing) + learned correction, init std 0.15)</div>
+      <div class="arch-sub">&times; side Bernoulli (leans to slot side)</div>
+      <div class="arch-sub">&times; sense Bernoulli (masked when battery &lt; sense cost)</div>
+    </div>
+  </div>
+  <div class="arch-critic">
+    <div class="arch-title">Critic</div>
+    <div class="arch-sub">same torso / GRU / MLP &rarr; Dense(1)</div>
+    <div class="arch-sub">input 133 = own view 69 + team summary 64</div>
+    
+  </div>
+</div>
+
+    </div>
+  </div>
+  <div class="slide-footer">
+    <span class="footer-text">SarSat MARL — 2026-09-22</span>
+    <span class="footer-page">3 / 10</span>
+  </div>
+</section>
+
+
+<section class="slide" id="slide-4" data-index="4">
+  <div class="slide-inner">
+    <div class="kicker">100-Agent</div>
+    <h1>100-Agent: Observation, Action and Critic</h1>
+    <div class="slide-body">
+      <div class="col-wrap cols-3"><div class="col"><h3>Observation</h3><ul class="bullets tight"><li>4 slots × 8: valid, incidence, squint, side (action encoding), beam value, scarcity-weighted value, team future accesses, contention</li>
+<li>16 × 2 look-ahead: remaining hotspot value reachable, raw and scarcity-weighted</li>
+<li>5 self: battery, can-sense, time remaining, visible value, visible count</li>
+<li>All features log-squashed to roughly [-1, 1] / [0, 1]</li></ul></div><div class="col"><h3>Action</h3><ul class="bullets tight"><li>4 slots: incidence [-1, 1], squint [-1, 1], side {0, 1}, sense {0, 1}</li>
+<li>Unchanged from the base environment's action space</li></ul></div><div class="col"><h3>Critic input</h3><ul class="bullets tight"><li>Own view (69) + team summary (64): time remaining; battery mean & 10/50/90 percentiles; fraction able to sense</li>
+<li>Remaining hotspot & background value</li>
+<li>40 sorted per-cluster remaining fractions</li>
+<li>16-step team-mean look-ahead</li>
+<li>Size independent of N — 133 vs 9,600 for a joint-observation critic</li></ul></div></div>
+    </div>
+  </div>
+  <div class="slide-footer">
+    <span class="footer-text">SarSat MARL — 2026-09-22</span>
+    <span class="footer-page">4 / 10</span>
+  </div>
+</section>
+
+
+<section class="slide" id="slide-5" data-index="5">
+  <div class="slide-inner">
+    <div class="kicker">100-Agent</div>
+    <h1>100-Agent: Reward Shaping</h1>
+    <div class="slide-body">
+      <ul class="bullets"><li>The environment reward is untouched: shared team reward = priority newly imaged</li>
+<li><code>reward_scale</code> × 10 for value-loss conditioning (returns O(1–10); <code>fraction_imaged</code> still logs the true return)</li>
+<li><code>credit_mix</code> 0.5: r<sub>i</sub> = 0.5 · team + 0.5 · N · own_share<sub>i</sub>; a target hit by k beams splits its value evenly; mean over agents is still the team reward</li>
+<li>Why: a background target is 1/26,000 of the return — invisible in a 100-agent shared reward. With pure team reward MAPPO reaches 0.847 and IPPO only ≈ 0.74</li>
+<li>This is credit assignment, not potential-based shaping: no new term rewards anything the team reward does not</li>
+<li>No other reward terms</li></ul>
+    </div>
+  </div>
+  <div class="slide-footer">
+    <span class="footer-text">SarSat MARL — 2026-09-22</span>
+    <span class="footer-page">5 / 10</span>
+  </div>
+</section>
+
+
+<section class="slide" id="slide-6" data-index="6">
+  <div class="slide-inner">
+    <div class="kicker">200-Agent Windowed</div>
+    <h1>200-Agent Windowed: Summary</h1>
+    <div class="slide-body">
+      <p class="one-liner"><strong>sarsat-200sat-events</strong>: 200 satellites, 20 Walker planes, 6000 persistent background targets, 40 hotspot clusters that are events open for one 10–30 step window each, 10% duty cycle, 180 steps.</p><div class="table-scroll"><table id="table-ev"><thead><tr><th>Policy</th><th>Mean ± std</th><th>Min</th><th>Max</th><th>Beats Greedy-Beam</th></tr></thead><tbody><tr><td><span class="badge badge-ref">ref</span>Random</td><td>0.025 ± 0.003</td><td>0.021</td><td>0.034</td><td>—</td></tr><tr><td><span class="badge badge-ref">ref</span>Greedy</td><td>0.279 ± 0.020</td><td>0.247</td><td>0.323</td><td>—</td></tr><tr><td><span class="badge badge-ref">ref</span>Greedy-Beam</td><td>0.440 ± 0.043</td><td>0.369</td><td>0.528</td><td>—</td></tr><tr><td><span class="badge badge-ref">ref</span>Solo-Plan</td><td>0.450 ± 0.042</td><td>0.385</td><td>0.534</td><td>—</td></tr><tr><td><span class="badge badge-ref">ref</span>Coop-Dedup</td><td>0.453 ± 0.043</td><td>0.378</td><td>0.544</td><td>—</td></tr><tr class="coop-plan"><td><span class="badge badge-ref">ref</span>Coop-Plan</td><td>0.670 ± 0.047</td><td>0.588</td><td>0.756</td><td>—</td></tr><tr><td><span class="badge badge-rl">RL</span>IPPO, credit_mix 0.5</td><td>0.645 ± 0.045</td><td>0.570</td><td>0.733</td><td>16/16</td></tr><tr><td><span class="badge badge-rl">RL</span>MAPPO, credit_mix 0.5</td><td>0.645 ± 0.047</td><td>0.569</td><td>0.732</td><td>16/16</td></tr><tr><td><span class="badge badge-rl">RL</span>MAPPO, credit_mix 0.1, look-ahead 48</td><td>0.641 ± 0.046</td><td>0.564</td><td>0.727</td><td>16/16</td></tr><tr><td><span class="badge badge-rl">RL</span>MAPPO, credit_mix 0.1</td><td>0.648 ± 0.047</td><td>0.571</td><td>0.733</td><td>16/16</td></tr><tr class="best-rl"><td><span class="badge badge-rl">RL</span>MAPPO, credit_mix 0.25, gamma 0.998 / lambda 0.98</td><td>0.649 ± 0.048</td><td>0.573</td><td>0.738</td><td>16/16</td></tr></tbody></table></div><p class="legend"><span class="swatch best-rl"></span> best RL row &nbsp;&nbsp; <span class="swatch coop-plan"></span> Coop-Plan (centralised reference; sees the full state and every satellite's future access) &nbsp;&nbsp; mean &plusmn; std over test seeds 1000&ndash;1015, greedy actions<br><strong>Every RL agent beats Greedy-Beam on 16/16 seeds (+0.21, i.e. +47%); the best reaches 97% of Coop-Plan and plateaus 0.02 below it.</strong></p>
+    </div>
+  </div>
+  <div class="slide-footer">
+    <span class="footer-text">SarSat MARL — 2026-09-22</span>
+    <span class="footer-page">6 / 10</span>
+  </div>
+</section>
+
+
+<section class="slide" id="slide-7" data-index="7">
+  <div class="slide-inner">
+    <div class="kicker">200-Agent</div>
+    <h1>200-Agent: Best RL Approach</h1>
+    <div class="slide-body">
+      <p class="best-sentence"><strong>MAPPO, credit_mix 0.25, gamma 0.998 / lambda 0.98</strong> is the best RL row: mean <strong>0.649</strong> over 16 seeds (16/16 beat Greedy-Beam), still 0.021 below Coop-Plan's 0.670 (97% of it) and +0.210 over Greedy-Beam; Solo-Plan, which plans as far ahead alone, gains nothing over Greedy-Beam here.</p><div class="col-wrap cols-3"><div class="col"><h3>System</h3><ul class="bullets tight"><li>MAPPO, credit_mix 0.25, gamma 0.998 / lambda 0.98 — same shared-parameter recurrent system as the 100-agent recipe</li>
+<li><code>WindowedCoopSarSat</code> observation (9-wide slots; cluster look-ahead gated on window)</li>
+<li><code>credit_mix</code> 0.25</li>
+<li>12 envs × 180-step rollouts (16 for the first two variants); GAE horizon lengthened to gamma 0.998 / lambda 0.98</li>
+<li>Otherwise the 100-agent PPO recipe (clip 0.1, 4 × 4, actor 3e-4 / critic 5e-4 with decay, GRU 128)</li></ul></div><div class="col"><h3>What it learned</h3><ul class="bullets tight"><li>Coordinated timing: which satellite must spend charge on the event only it can reach before its window closes</li></ul></div><div class="col"><h3>What remains</h3><ul class="bullets tight"><li>Plateau: five variants (IPPO/MAPPO, credit_mix 0.1–0.5, look-ahead 16/48, GAE horizon 18/67 steps) all land at 0.641–0.649 vs Coop-Plan's 0.670</li>
+<li>Battery at window-open averages 0.37 vs Coop-Plan's 0.77 — the policy is not rationing far enough ahead of the event</li>
+<li>Duplicate captures: 38 priority units vs Coop-Plan's 3.5</li></ul></div></div>
+    </div>
+  </div>
+  <div class="slide-footer">
+    <span class="footer-text">SarSat MARL — 2026-09-22</span>
+    <span class="footer-page">7 / 10</span>
+  </div>
+</section>
+
+
+<section class="slide" id="slide-8" data-index="8">
+  <div class="slide-inner">
+    <div class="kicker">200-Agent</div>
+    <h1>200-Agent: Architecture</h1>
+    <div class="slide-body">
+      
+<div class="arch-wrap">
+  <div class="arch-flow">
+    <div class="arch-box small">obs 73</div>
+    <div class="arch-arrow">&#9660;</div>
+    <div class="arch-box wide">
+      <div class="arch-title">SarSatTorso</div>
+      <div class="arch-sub">shared Dense(32) per slot × 4 (9 features/slot: + fraction of window still open)</div>
+      <div class="arch-sub">shared Dense(64) over look-ahead</div>
+      <div class="arch-sub">+ self features</div>
+    </div>
+    <div class="arch-arrow">&#9660;</div>
+    <div class="arch-box">MLP 256 &rarr; 128 + LayerNorm</div>
+    <div class="arch-arrow">&#9660;</div>
+    <div class="arch-skip">
+      <div class="arch-box gru">GRU 128</div>
+      <div class="arch-skip-rail" aria-hidden="true"></div>
+      <div class="arch-skip-label">skip connection around GRU</div>
+    </div>
+    <div class="arch-arrow">&#9660;</div>
+    <div class="arch-box">MLP 128</div>
+    <div class="arch-arrow">&#9660;</div>
+    <div class="arch-box wide head">
+      <div class="arch-title">SlotMixtureHead</div>
+      <div class="arch-sub">categorical over 4 slots (latent, marginalised in log-prob)</div>
+      <div class="arch-sub">&times; tanh-Gaussian pointing around chosen slot (mean =
+        atanh(slot pointing) + learned correction, init std 0.15)</div>
+      <div class="arch-sub">&times; side Bernoulli (leans to slot side)</div>
+      <div class="arch-sub">&times; sense Bernoulli (masked when battery &lt; sense cost)</div>
+    </div>
+  </div>
+  <div class="arch-critic">
+    <div class="arch-title">Critic</div>
+    <div class="arch-sub">same torso / GRU / MLP &rarr; Dense(1)</div>
+    <div class="arch-sub">input own view 73 + team summary 64</div>
+    <div class="arch-note">Cluster look-ahead gated on the cluster windows; otherwise identical to the 100-agent network.</div>
+  </div>
+</div>
+
+    </div>
+  </div>
+  <div class="slide-footer">
+    <span class="footer-text">SarSat MARL — 2026-09-22</span>
+    <span class="footer-page">8 / 10</span>
+  </div>
+</section>
+
+
+<section class="slide" id="slide-9" data-index="9">
+  <div class="slide-inner">
+    <div class="kicker">200-Agent</div>
+    <h1>200-Agent: Observation, Action and Critic</h1>
+    <div class="slide-body">
+      <div class="col-wrap cols-3"><div class="col"><h3>Observation</h3><ul class="bullets tight"><li>Same 8 base features per slot plus a 9th: fraction of the target's window still open</li>
+<li>Cluster look-ahead (16 × 2) gated on the cluster windows — only counts value the satellite can still reach before the window closes</li>
+<li>Same 5 self features as the 100-agent observation</li></ul></div><div class="col"><h3>Action</h3><ul class="bullets tight"><li>Identical to the 100-agent action space: incidence, squint, side, sense</li>
+<li>Unchanged from the base environment</li></ul></div><div class="col"><h3>Critic input</h3><ul class="bullets tight"><li>Own view (73) + the same fixed ~64-number team summary</li>
+<li>Still independent of N — the same saving that makes MAPPO usable at 200 satellites</li></ul></div></div>
+    </div>
+  </div>
+  <div class="slide-footer">
+    <span class="footer-text">SarSat MARL — 2026-09-22</span>
+    <span class="footer-page">9 / 10</span>
+  </div>
+</section>
+
+
+<section class="slide" id="slide-10" data-index="10">
+  <div class="slide-inner">
+    <div class="kicker">200-Agent</div>
+    <h1>200-Agent: Reward Shaping</h1>
+    <div class="slide-body">
+      <ul class="bullets"><li>Same shaping recipe as the 100-agent scenario: environment reward untouched, shared team reward = priority newly imaged</li>
+<li><code>reward_scale</code> × 10 for value-loss conditioning</li>
+<li>Best row uses <code>credit_mix</code> 0.25: r<sub>i</sub> = (1 − 0.25) · team + 0.25 · N · own_share<sub>i</sub>; simultaneous captures split evenly; mean over agents is still the team reward</li>
+<li>Same rationale as the 100-agent case: a background target is a tiny fraction of the shared reward and gets lost in 200-way averaging</li>
+<li>Still credit assignment, not potential-based shaping — no new behaviour is rewarded that the team reward does not already reward</li>
+<li>No other reward terms</li></ul>
+    </div>
+  </div>
+  <div class="slide-footer">
+    <span class="footer-text">SarSat MARL — 2026-09-22</span>
+    <span class="footer-page">10 / 10</span>
+  </div>
+</section>
+
+    </div>
+  </div>
+  <div class="controls">
+    <button id="prevBtn" aria-label="Previous slide">&larr; Prev</button>
+    <span class="counter" id="counter">1 / 10</span>
+    <button id="nextBtn" aria-label="Next slide">Next &rarr;</button>
+  </div>
+<script>
+
+(function () {
+  var slides = Array.prototype.slice.call(document.querySelectorAll('.slide'));
+  var total = slides.length;
+  var index = 0;
+  var counter = document.getElementById('counter');
+  var prevBtn = document.getElementById('prevBtn');
+  var nextBtn = document.getElementById('nextBtn');
+  var stage = document.getElementById('stage');
+  var stageWrap = document.getElementById('stageWrap');
+  var STAGE_W = 1280, STAGE_H = 720;
+
+  function render() {
+    slides.forEach(function (s, i) {
+      s.classList.toggle('active', i === index);
+    });
+    counter.textContent = (index + 1) + ' / ' + total;
+    prevBtn.disabled = index === 0;
+    nextBtn.disabled = index === total - 1;
+  }
+
+  function go(delta) {
+    index = Math.max(0, Math.min(total - 1, index + delta));
+    render();
+  }
+
+  function rescale() {
+    var w = stageWrap.clientWidth;
+    var h = stageWrap.clientHeight;
+    var scale = Math.min(w / STAGE_W, h / STAGE_H);
+    stage.style.transform = 'scale(' + scale + ')';
+  }
+
+  prevBtn.addEventListener('click', function () { go(-1); });
+  nextBtn.addEventListener('click', function () { go(1); });
+  window.addEventListener('keydown', function (e) {
+    if (e.key === 'ArrowRight' || e.key === 'PageDown') { go(1); e.preventDefault(); }
+    if (e.key === 'ArrowLeft' || e.key === 'PageUp') { go(-1); e.preventDefault(); }
+  });
+  window.addEventListener('resize', rescale);
+
+  render();
+  rescale();
+  window.addEventListener('load', rescale);
+  requestAnimationFrame(rescale);
+})();
+
+</script>
+</body>
+</html>
