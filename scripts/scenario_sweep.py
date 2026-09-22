@@ -1,0 +1,184 @@
+"""Measure the cooperation gap of candidate scenarios (reference policies, one seed each).
+
+Like ``scripts/cooperation_gap.py`` but over a table of named configurations, with the
+battery exposed, and writing one JSON line per (config, policy) so partial results survive.
+
+Run: ``python scripts/scenario_sweep.py --configs walker20 pairs --out runs/sweep.jsonl``
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import time
+
+import jax
+import numpy as np
+
+import sarsat.reference as reference
+from sarsat import SarSat
+from sarsat.reference import ReferenceController
+from sarsat.windows import WindowedSarSat
+
+
+def lean_precompute(env, state):
+    """``reference.precompute`` with int32 / float32 tables: the ``(T, N, M)`` arrays reach
+    16 GB in the default dtypes at 200 satellites x 16,000 targets."""
+    steps = jax.numpy.arange(1, env.time_limit + 1)
+    geometry = jax.jit(jax.vmap(lambda s: env._target_geometry(state, s)[1]))
+    access = np.concatenate(
+        [np.asarray(geometry(steps[i : i + 20])) for i in range(0, len(steps), 20)]
+    )
+    prio = np.asarray(state.target_priority, np.float32)
+    team = np.cumsum(access.sum(1, dtype=np.int32)[::-1], 0, dtype=np.int32)[::-1]
+    own = np.cumsum(access[::-1], 0, dtype=np.int32)[::-1]
+    best_team = np.einsum(
+        "tnm,tm->tnm", access, prio[None] / np.maximum(team, 1).astype(np.float32)
+    ).max(2)
+    best_own = np.where(access, prio[None, None] / np.maximum(own, 1), np.float32(0)).max(2)
+    return dict(access=access, team=team, own=own, best_team=best_team, best_own=best_own)
+
+
+reference.precompute = lean_precompute
+
+BASE = dict(max_targets=8000, hotspot_targets=50, hotspot_weight=10.0, time_limit=180)
+BIG = dict(max_targets=16000, hotspots=80)  # 4000 hotspot + 12000 background targets
+# Events over a persistent background: only the hotspot clusters are windowed.
+EV = dict(
+    num_satellites=200, planes=20, hotspots=40, window_steps=(10, 30), background_windows=False
+)
+CONFIGS = {
+    # 100-satellite benchmark, for reference.
+    "ref100": dict(num_satellites=100, planes=10, hotspots=40),
+    # 200 satellites: more planes (same overlap per plane) vs the same planes (denser).
+    "walker20": dict(num_satellites=200, planes=20, hotspots=40),
+    "walker10": dict(num_satellites=200, planes=10, hotspots=40),
+    # More, and heavier, hotspots: the priority contrast lever.
+    "hot80": dict(num_satellites=200, planes=20, hotspots=80),
+    "hot80w30": dict(num_satellites=200, planes=20, hotspots=80, hotspot_weight=30.0),
+    # Tighter battery: 10% sustainable duty cycle instead of 20%.
+    "tight": dict(num_satellites=200, planes=20, hotspots=40, recharge_rate=0.01),
+    "hot80tight": dict(num_satellites=200, planes=20, hotspots=80, recharge_rate=0.01),
+    # Formation pairs (planes of two, 3 s apart) share one view: the dedup lever.
+    "pairs": dict(num_satellites=200, planes=100, hotspots=40, train_spacing_s=3.0),
+    "pairs_tight": dict(
+        num_satellites=200, planes=100, hotspots=40, train_spacing_s=3.0, recharge_rate=0.01
+    ),
+    # Twice the targets for twice the satellites, so greedy_beam does not saturate.
+    "big": BIG | dict(num_satellites=200, planes=20),
+    "big_tight": BIG | dict(num_satellites=200, planes=20, recharge_rate=0.01),
+    "big_w30": BIG | dict(num_satellites=200, planes=20, hotspot_weight=30.0),
+    "big_pairs": BIG | dict(num_satellites=200, planes=100, train_spacing_s=3.0),
+    "big_pairs_tight": BIG
+    | dict(num_satellites=200, planes=100, train_spacing_s=3.0, recharge_rate=0.01),
+    # Half the episode instead of twice the targets.
+    "t90": dict(num_satellites=200, planes=20, hotspots=40, time_limit=90),
+    "t90_tight": dict(
+        num_satellites=200, planes=20, hotspots=40, time_limit=90, recharge_rate=0.01
+    ),
+    "t90_pairs": dict(
+        num_satellites=200, planes=100, hotspots=40, train_spacing_s=3.0, time_limit=90
+    ),
+    # Time-windowed targets (sarsat.windows): hotspot clusters are events that all of their
+    # targets share; the window length is uniform in window_steps.
+    "win100_20": dict(num_satellites=100, planes=10, hotspots=40, window_steps=(10, 30)),
+    "win100_40": dict(num_satellites=100, planes=10, hotspots=40, window_steps=(20, 60)),
+    "win200_20": dict(num_satellites=200, planes=20, hotspots=40, window_steps=(10, 30)),
+    "win200_40": dict(num_satellites=200, planes=20, hotspots=40, window_steps=(20, 60)),
+    "win200_10": dict(num_satellites=200, planes=20, hotspots=40, window_steps=(5, 15)),
+    # Events over a persistent background: only the hotspot clusters are windowed.
+    "ev100": dict(
+        num_satellites=100, planes=10, hotspots=40, window_steps=(10, 30), background_windows=False
+    ),
+    "ev100_hot80": dict(
+        num_satellites=100, planes=10, hotspots=80, window_steps=(10, 30), background_windows=False
+    ),
+    "ev200_hot80": dict(
+        num_satellites=200, planes=20, hotspots=80, window_steps=(10, 30), background_windows=False
+    ),
+    "ev200_hot80_w30": dict(
+        num_satellites=200,
+        planes=20,
+        hotspots=80,
+        hotspot_weight=30.0,
+        window_steps=(10, 30),
+        background_windows=False,
+    ),
+    "ev200_hot80_short": dict(
+        num_satellites=200, planes=20, hotspots=80, window_steps=(5, 15), background_windows=False
+    ),
+    # Keeping 200 satellites from covering the events by brute force.
+    "ev200": EV,
+    "ev200_tight": EV | dict(recharge_rate=0.01),  # -> sarsat-200sat-events
+    "ev200_big": EV | dict(hotspot_targets=100),
+    "ev200_p10": EV | dict(planes=10),
+    "ev200_t90": EV | dict(time_limit=90),
+    "ev200_big_tight": EV | dict(hotspot_targets=100, recharge_rate=0.01),
+    "ev200_t90_tight": dict(
+        num_satellites=200,
+        planes=20,
+        hotspots=40,
+        window_steps=(10, 30),
+        background_windows=False,
+        time_limit=90,
+        recharge_rate=0.01,
+    ),
+    "t90_pairs_tight": dict(
+        num_satellites=200,
+        planes=100,
+        hotspots=40,
+        train_spacing_s=3.0,
+        time_limit=90,
+        recharge_rate=0.01,
+    ),
+}
+
+
+def run(env: SarSat, state0, policy: str) -> tuple[float, int]:
+    controller = ReferenceController(env, state0, policy)
+    state, total, honoured = state0, 0.0, 0
+    step_fn = jax.jit(env.step)
+    for _ in range(env.time_limit):
+        action = controller(state)
+        sensing = np.asarray(action[:, -1] > 0.5)
+        honoured += int((sensing & np.asarray(env._can_sense(state.battery))).sum())
+        state, timestep = step_fn(state, action)
+        total += float(timestep.reward[0])
+        if bool(timestep.last()):
+            break
+    return total, honoured
+
+
+def main() -> None:
+    p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    p.add_argument("--configs", nargs="+", default=list(CONFIGS))
+    p.add_argument("--policies", nargs="+", default=["greedy_beam", "coop_plan"])
+    p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--out", default=None)
+    args = p.parse_args()
+
+    for name in args.configs:
+        kwargs = BASE | CONFIGS[name]
+        env = WindowedSarSat(**kwargs)  # == SarSat unless window_steps is set
+        state, _ = jax.jit(env.reset)(jax.random.PRNGKey(args.seed))
+        results = {}
+        for policy in args.policies:
+            start = time.perf_counter()
+            ret, looks = run(env, state, policy)
+            results[policy] = ret
+            print(
+                f"{name:12s} {policy:11s} return {ret:.3f}  looks {looks:6d}  "
+                f"({time.perf_counter() - start:.0f}s)",
+                flush=True,
+            )
+            if args.out:
+                with open(args.out, "a") as f:
+                    row = dict(config=name, seed=args.seed, policy=policy, ret=ret, looks=looks)
+                    f.write(json.dumps(row | {"kwargs": kwargs}) + "\n")
+        if "coop_plan" in results and "greedy_beam" in results:
+            gap = results["coop_plan"] / results["greedy_beam"] - 1
+            print(f"{name:12s} gap coop_plan / greedy_beam: {gap:+.0%}", flush=True)
+
+
+if __name__ == "__main__":
+    main()

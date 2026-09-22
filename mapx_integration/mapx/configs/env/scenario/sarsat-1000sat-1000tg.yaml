@@ -1,0 +1,6 @@
+# SarSat: 1000 satellites, 1000 targets.
+name: SarSat
+task_name: sarsat-1000sat-1000tg
+task_config:
+  num_satellites: 1000
+  max_targets: 1000

@@ -1,0 +1,13 @@
+# SarSat cooperative benchmark: 100 satellites in 10 Walker planes, 6000 background
+# targets plus 40 high-value hotspots of 50 targets. Battery-binding with priority
+# contrast and overlapping coverage, so coordination is worth ~10-15% over the best
+# independent policy (DECISIONS.md issue 22; measure with scripts/cooperation_gap.py).
+name: SarSat
+task_name: sarsat-100sat-hotspots
+task_config:
+  num_satellites: 100
+  max_targets: 8000
+  hotspots: 40
+  hotspot_targets: 50
+  hotspot_weight: 10.0
+  planes: 10

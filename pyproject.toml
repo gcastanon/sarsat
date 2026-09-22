@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=62.6"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sarsat"
+version = "0.1.0"
+description = "A simple, fast multi-agent LEO satellite imaging environment in JAX (Jumanji API)."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["jax", "jumanji>=1.1.0", "numpy"]
+
+[project.optional-dependencies]
+dev = ["pytest", "ruff"]
+
+[tool.setuptools.packages.find]
+include = ["sarsat*"]
+
+[tool.setuptools.package-data]
+sarsat = ["land_mask_1deg.npy", "viewer.html"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["A", "B", "E", "F", "I", "N", "W", "RUF"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

@@ -1,0 +1,14 @@
+# SarSat formation-flying benchmark: 50 pairs flying 3 s apart, so each pair shares one
+# view and an independent policy wastes half its looks on duplicates. Cooperation is
+# worth 60-70% here (DECISIONS.md issue 22). A stress test for coordination rather than
+# a realistic constellation.
+name: SarSat
+task_name: sarsat-100sat-pairs
+task_config:
+  num_satellites: 100
+  max_targets: 8000
+  hotspots: 40
+  hotspot_targets: 50
+  hotspot_weight: 10.0
+  planes: 50
+  train_spacing_s: 3.0

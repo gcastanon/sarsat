@@ -1,0 +1,26 @@
+# Copyright 2026 MAPX contributors.
+# SPDX-License-Identifier: Apache-2.0
+
+# ---Environment Configs---
+defaults:
+  - _self_
+  - scenario: sarsat-8sat-100tg
+
+env_name: SarSat
+
+# Episode return is the priority-weighted fraction of targets imaged, in [0, 1].
+eval_metric: episode_return
+
+# Satellites are homogeneous and their observations egocentric, so a one-hot agent ID
+# carries no useful information (and would add 1000 features at full scale). Declaring
+# the ID implicit stops MAPX from appending one.
+implicit_agent_id: True
+
+# Settings shared by every scenario; see the `sarsat.SarSat` constructor for the rest.
+kwargs:
+  time_limit: 180              # steps of 60 s, about two orbits
+  beam_half_width_deg: [4.0, 4.0]
+  land_fraction: 0.8
+  lookahead_steps: 2
+  num_neighbors: 5
+  side_switch: True           # look side as a binary action slot (see DECISIONS.md issue 21)

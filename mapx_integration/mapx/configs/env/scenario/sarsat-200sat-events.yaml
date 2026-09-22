@@ -1,0 +1,19 @@
+# SarSat 200-satellite event benchmark (sarsat.windows.WindowedSarSat): 200 satellites in
+# 20 Walker planes, 6000 persistent background targets, and 40 hotspots that are *events*,
+# each open for a 10-30 step window at a random time, with a 10% sustainable duty cycle.
+# The background tempts a greedy satellite to spend charge it will need for the event only
+# it can reach in time. Over three seeds greedy_beam scores 0.43-0.50, solo_plan the same
+# (temporal planning alone recovers nothing) and coop_plan 0.67-0.75: +49-56%, all of it
+# cooperative (DECISIONS.md issue 24).
+name: SarSat
+task_name: sarsat-200sat-events
+task_config:
+  num_satellites: 200
+  max_targets: 8000
+  hotspots: 40
+  hotspot_targets: 50
+  hotspot_weight: 10.0
+  planes: 20
+  window_steps: [10, 30]
+  background_windows: false
+  recharge_rate: 0.01

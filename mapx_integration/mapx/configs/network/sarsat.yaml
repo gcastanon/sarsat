@@ -1,0 +1,29 @@
+# ---Networks for CoopSarSat---
+# The pre-torso's output width must equal hidden_state_dim (the GRU keeps its input width).
+hidden_state_dim: 128
+
+actor_network:
+  pre_torso:
+    _target_: mapx.networks.sarsat.SarSatTorso
+    num_slots: ${env.kwargs.num_slots}
+    horizon: ${env.kwargs.horizon}
+    layer_sizes: [256, 128]
+  post_torso:
+    _target_: mapx.networks.torsos.MLPTorso
+    layer_sizes: [128]
+    use_layer_norm: True
+    activation: relu
+
+# The critic reads the agent's own view plus a fixed ~64-number team summary (MAPPO) or
+# the view alone (IPPO); either way it is the same size as the actor.
+critic_network:
+  pre_torso:
+    _target_: mapx.networks.sarsat.SarSatTorso
+    num_slots: ${env.kwargs.num_slots}
+    horizon: ${env.kwargs.horizon}
+    layer_sizes: [256, 128]
+  post_torso:
+    _target_: mapx.networks.torsos.MLPTorso
+    layer_sizes: [128]
+    use_layer_norm: True
+    activation: relu

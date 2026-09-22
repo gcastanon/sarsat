@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SarSat episode</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface: #fcfcfb; --panel: #f3f2ee; --border: #d9d7cf;
+    --ocean: #d6e3f0; --land: #e7e3d6; --grid: rgba(0,0,0,0.10);
+    --text: #0b0b0b; --text-2: #52514e;
+    --sat: #2a78d6; --target: #eb6834; --captured: #1baf7a; --look: #eda100;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --surface: #1a1a19; --panel: #232322; --border: #3a3a37;
+      --ocean: #172230; --land: #35362f; --grid: rgba(255,255,255,0.10);
+      --text: #ffffff; --text-2: #c3c2b7;
+      --sat: #3987e5; --target: #d95926; --captured: #199e70; --look: #c98500;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface: #1a1a19; --panel: #232322; --border: #3a3a37;
+    --ocean: #172230; --land: #35362f; --grid: rgba(255,255,255,0.10);
+    --text: #ffffff; --text-2: #c3c2b7;
+    --sat: #3987e5; --target: #d95926; --captured: #199e70; --look: #c98500;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--surface); color: var(--text);
+         font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { display: flex; flex-wrap: wrap; gap: 8px 24px; align-items: baseline;
+           padding: 12px 16px 4px; }
+  header h1 { font-size: 18px; margin: 0; font-weight: 600; }
+  header .summary { color: var(--text-2); }
+  .layout { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 12px; padding: 8px 16px 16px; }
+  @media (max-width: 800px) { .layout { grid-template-columns: minmax(0, 1fr); } }
+  .map-wrap { position: relative; }
+  canvas#map { width: 100%; aspect-ratio: 2 / 1; display: block; border: 1px solid var(--border);
+               border-radius: 6px; background: var(--ocean); cursor: crosshair; }
+  canvas#timeline { width: 100%; height: 90px; display: block; margin-top: 8px;
+                    border: 1px solid var(--border); border-radius: 6px; background: var(--panel); cursor: pointer; }
+  .tooltip { position: absolute; pointer-events: none; background: var(--panel); color: var(--text);
+             border: 1px solid var(--border); border-radius: 4px; padding: 6px 8px; font-size: 12px;
+             white-space: pre; display: none; box-shadow: 0 2px 8px rgba(0,0,0,0.15); z-index: 2; }
+  aside { display: flex; flex-direction: column; gap: 10px; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; }
+  .controls { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  button, select { font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--border);
+                   border-radius: 4px; padding: 4px 10px; cursor: pointer; }
+  button:hover { border-color: var(--text-2); }
+  input[type=range] { width: 100%; margin: 6px 0; }
+  label.check { display: inline-flex; gap: 4px; align-items: center; margin-right: 8px; color: var(--text-2); }
+  .stat { display: flex; justify-content: space-between; gap: 8px; padding: 2px 0; }
+  .stat b { font-weight: 600; font-variant-numeric: tabular-nums; }
+  .stat span { color: var(--text-2); }
+  .legend { display: grid; grid-template-columns: 16px 1fr; gap: 4px 8px; align-items: center; color: var(--text-2); font-size: 12px; }
+  .swatch { width: 12px; height: 12px; border-radius: 50%; justify-self: center; }
+  .swatch.sq { border-radius: 2px; height: 8px; width: 14px; }
+  .battery { display: grid; grid-template-columns: repeat(auto-fill, minmax(22px, 1fr)); gap: 3px; margin-top: 6px; }
+  .battery div { height: 26px; background: var(--border); border-radius: 2px; position: relative; overflow: hidden; }
+  .battery div i { position: absolute; left: 0; right: 0; bottom: 0; background: var(--sat); }
+  .muted { color: var(--text-2); font-size: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title">SarSat episode</h1>
+  <div class="summary" id="summary"></div>
+</header>
+<div class="layout">
+  <div class="map-wrap">
+    <canvas id="map"></canvas>
+    <canvas id="timeline"></canvas>
+    <div class="tooltip" id="tooltip"></div>
+  </div>
+  <aside>
+    <div class="card">
+      <div class="controls">
+        <button id="play">Play</button>
+        <button id="back" title="Previous step (left arrow)">&#9664;</button>
+        <button id="fwd" title="Next step (right arrow)">&#9654;</button>
+        <button id="load" title="Load satellites.csv, looks.csv, targets.csv and captures.csv from an evaluation run">Load CSVs…</button>
+        <input type="file" id="files" multiple accept=".csv,text/csv" style="display:none">
+        <select id="speed" title="Steps per second">
+          <option value="2">2 steps/s</option><option value="5" selected>5 steps/s</option>
+          <option value="10">10 steps/s</option><option value="30">30 steps/s</option>
+        </select>
+      </div>
+      <input type="range" id="slider" min="0" value="0">
+      <div class="stat"><span>Step</span><b id="stepLabel"></b></div>
+      <div class="stat"><span>Elapsed</span><b id="timeLabel"></b></div>
+    </div>
+    <div class="card">
+      <div class="stat"><span>Targets imaged</span><b id="capturedLabel"></b></div>
+      <div class="stat"><span>Return</span><b id="returnLabel"></b></div>
+      <div class="stat"><span>Looks taken</span><b id="looksLabel"></b></div>
+      <div class="stat"><span>Mean battery</span><b id="batteryLabel"></b></div>
+      <div class="battery" id="batteryBars"></div>
+    </div>
+    <div class="card">
+      <label class="check"><input type="checkbox" id="showTrails" checked> trails</label>
+      <label class="check"><input type="checkbox" id="showLooks" checked> looks</label>
+      <label class="check"><input type="checkbox" id="showTargets" checked> targets</label>
+      <label class="check"><input type="checkbox" id="showLabels" checked> labels</label>
+      <div class="legend" style="margin-top:8px">
+        <span class="swatch" style="background:var(--sat)"></span><span>satellite (sub-satellite point) and ground track</span>
+        <span class="swatch sq" style="background:var(--look)"></span><span>active look: beam footprint, boresight ring and look direction (recent looks fade)</span>
+        <span class="swatch sq" style="background:var(--captured)"></span><span>look that imaged a target</span>
+        <span class="swatch" style="background:var(--target)"></span><span>target not yet imaged (larger dot = higher priority)</span>
+        <span class="swatch" style="background:var(--captured)"></span><span>target imaged</span>
+      </div>
+      <p class="muted" style="margin:8px 0 0">Space plays and pauses, arrow keys step. Hover a satellite or target for details; click the timeline to seek.</p>
+    </div>
+  </aside>
+</div>
+<script>
+"use strict";
+// Episode data: embedded by `sarsat.evaluate.write_html`, or loaded from the four CSV files
+// (satellites, looks, targets, captures) via the "Load CSVs" button or drag and drop.
+let D = /*EPISODE_DATA*/null;
+const LAND_MASK = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP//4AAf///gAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA////h//////7eAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/7//4////////wAAAAAAAAAAAMAAAAAHgAAAAAAAAAAAAAAAAAAAAAAAAAAA///8Af//////8AAAAB7nwAAAAAAAAAAD8AAAAAAAAAAAAAAAAAAAAAAAAEDzH3/4////////4AAAAAfkAAAAAAAAAAAAD4AAAAAAAAAAAAAAAAAAAAAAAYAAAP/Af///////+AAAAAPCAAAAAAAAAAAAAYAAAAAAAAAAAAAAAAAAAAADtDAM2f+AH///////4AAAAAAAAAAAAAB4AAAAB/8AAAAAAAAAAAAAAAAAAAAAH/wcz78AAAP/////8AAAAAAAAAAAAD4AAAA////AAAB/gAAAAAAAAAAAAAACAQAAAIAAAAH/////8AAAAAAAAAAAAOAAAAP///4AAAAAAAAAAAAAAAAAAAAP8AIe+M/gAAD/////4AAAAAAAAAAAA4AAAH////f8DAAGAAAAAAAAAAAAAAAfv+4+Q//wAAB/////wAAAAAAAAAAABwAHgH///////4APwAAAAAwAAAAAAAAOP/8E4///AABf////wAAAAAAAAAAADwAPL////////42//gAAAAAAAP8AAAAAH/+A8f//4AA////+wAAAAAAB/AAAAAAfv/////////////8AAAAAB///+F/3H//CeBwf+AAn////AAAAAAA//4AAAAcPv/////////////+9n8wAP///////+Q4DPzwD8AAX///wAAAAAAH///wADf/3m/////////////////+AD////////////3wZ/wA///4AAAAAAAH///+I////v//////////////////4E/////////////gD/8Af//gAAAAAAAf//9+P////f/////////////////Lwf////////////6AD+YAf/wAAf8AAAA/8f+D///////////////////////AgAf///////////zw7/gAP/gAAP4AAAB/4/+f//////////////////////8AAAf///////////DAA/gAH/gAADAAAAH/z/////////////////////////+AAH///////////8AAgGAAD/AAAAAAAA//H/////////////////////////6AAP///////////wAA/AAAB+AAAAAAAB/+H//////////////////////jP+AAAH/9z////////gAA/wAAAGAAAAAAAB//D7////////////////////+A/YAAAA/zAB///////gAA/wQAAAAAAAAAAA//gb///////////////////+cBgAAAAADwAAf//////4AA/94AAAAAAAAAQA5+A///////////////////4AAHAAAAAADIAAP//////4AAf/8AAAAAAAAA8AA+C///////////////////wAAfgAAAAAMAAAD///////wAf/+AAAAAAAAA4AMcH///////////////////AAA/gAAAAAgAAAB///////8Af//AAAAAAAAAcANQH//////////////////8AAA/AAAAAAAAAAAf///////x///wAAAAAAAHGAEBv//////////////////+AAA+AAAAAAAAAABP///////x///8AAAAAAAPHAf/////////////////////6AA8AAAAAAAAAAAH///////x///8AAAAAAAPPx//////////////////////6AAwAAAAAAAAAAAD///////9///8AAAAAAAAPj//////////////////////6AAQAAAAAAAAAAAD///////////EAAAAAAAAYP//////////////////////7AAAAAAAAAAAAAAB/////////+APAAAAAAAAA///////////////////////zAAAAAAAAAAAAAAAf/////////gfAAAAAAAAP///////////////////////yAAAAAAAAAAAAAAAP/////////gDgAAAAAAAH///////////////////////iAAAAAAAAAAAAAAAP/////////xAAAAAAAAAD/////vP////////////////CAAAAAAAAAAAAAAAP/////////+AAAAAAAAAB/////Gf///////////////+AAAAAAAAAAAAAAAAP////////8wAAAAAAAAAB//H/+AP///////////////8CAAAAAAAAAAAAAAAP////////wAAAAAAAAADj/jz/8AD///////////////4HgAAAAAAAAAAAAAAP////////gAAAAAAAAAH/4Bw/8AB//////////////+ALAAAAAAAAAAAAAAAP////////gAAAAAAAAAH/wAcf8PB//////////////8AAAAAAAAAAAAAAAAAP///////8AAAAAAAAAAH/gMHfN///////////////v4AMAAAAAAAAAAAAAAAP///////8AAAAAAAAAAH/AMCOP//////////////+JwAMAAAAAAAAAAAAAAAH///////4AAAAAAAAAAH/AAAHH//////////////8BwAIAAAAAAAAAAAAAAAD///////wAAAAAAAAAAH+AAYGH//////////////+w4AYAAAAAAAAAAAAAAAD///////wAAAAAAAAAAAgf+AABM//////////////g4D4AAAAAAAAAAAAAAAB///////wAAAAAAAAAAAh/+AAAA//////////////A4fwAAAAAAAAAAAAAAAA///////gAAAAAAAAAAB//8AAAA//////////////AB+AAAAAAAAAAAAAAAAAP/////+AAAAAAAAAAAD//+AAAB//////////////gDwAAAAAAAAAAAAAAAAAH/////8AAAAAAAAAAAH///4GAB//////////////gDAAAAAAAAAAAAAAAAAAG/////4AAAAAAAAAAAP///8P4D//////////////wCAAAAAAAAAAAAAAAAAACf////4AAAAAAAAAAAP////v////////////////gAAAAAAAAAAAAAAAAAAABP//hAYAAAAAAAAAAAP/////////H///////////wAAAAAAAAAAAAAAAAAAAAv//AAYAAAAAAAAAAAf/////////H///////////wAAAAAAAAAAAAAAAAAAAA3/+AAcAAAAAAAAAAB///////8//h///////////gAAAAAAAAAAAAAAAAAAAAR/+AAMAAAAAAAAAAD///////8//wH//////////AAAAAAAAAAAAAAAAAAAAAJ/+AAEAAAAAAAAAAH///////+f/8B/////////+AAAAAAAAAAAAAAAAAAAAAI/8AAAAAAAAAAAAAH///////+f/84Af///////8QAAAAAAAAAAAAAAAAAAAAAf8AAAAAAAAAAAAAP////////H//+AP///////4gAAAAAAAAAAAAAAAAAAAAAP8AAuAAAAAAAAAAP////////H///AH///////AgAAAAAAAAAAAAAAAAAAAAAH8AYBgAAAAAAAAAf////////n//+AD//4P//YAAAAAAAAAAAAAAAAAAAAAAAH+A4A4AAAAAAAAAP////////j//8AAf/4H/+AAAAAAAAAAAAAAAAgAAAAAAAH/BwABwAAAAAAAAP////////h//8AAf/gD/8YAAAAAAAAAAAAAAAAAAAAAAAD/nwAB4AAAAAAAAP////////x//4AAf/AD/8QAAAAAAAAAAAAAAAAAAAAAAAAf/wAAAAAAAAAAAP////////4//gAAf+AB/+AAwAAAAAAAAAAAAAAAAAAAAAAH/wAAAAAAAAAAAP////////4f+AAAf8ADf/AAwAAAAAAAAAAAAAAAAAAAAAAAH/AAAAAAAAAAAf////////8f8AAAPwAAP/gAwAAAAAAAAAAAAAAAAAAAAAAAD/gAAAAAAAAAAf////////+fgAAAPwAAP/gAQAAAAAAAAAAAAAAAAAAAAAAAA/AAAAAAAAAAAf/////////eAAAAHwAAP/gAEAAAAAAAAAAAAAAAAAAAAAAAAHAAAAAAAAAAAf/////////gAAAAHwAAE/gAAAAAAAAAAAAAAAAAAAAAAAAAADABIAAAAAAAAP/////////gIAAADwAAEfgAIAAAAAAAAAAAAAAAAAAAAAAAADgH/IAAAAAAAH/////////34AAADwAAIOAAEAAAAAAAAAAAAAAAAAAAAAAAAAiPf+AAAAAAAD//////////4AAADgAAIEAAAAAAAAAAAAAAAAAAAAAAAAAAAAd///AAAAAAAB//////////wAAABIAAMAAAHAAAAAAAAAAAAAAAAAAAAAAAAAE///gAAAAAAB//////////wAAAAMAAEAAALgAAAAAAAAAAAAAAAAAAAAAAAAAf//wAAAAAAAf/////////gAAAAMAADAAMDAAAAAAAAAAAAAAAAAAAAAAAAAAf///gAAAAAAP/B///////gAAAAAAADgAOAAAAAAAAAAAAAAAAAAAAAAAAAAAf///wAAAAAACAA3//////AAAAAAAAxgA8AAAAAAAAAAAAAAAAAAAAAAAAAAAf///4AAAAAAAAAD/////+AAAAAAAAZgB8AAAAAAAAAAAAAAAAAAAAAAAAAAA////4AAAAAAAAAD/////8AAAAAAAAMwH8AAAAAAAAAAAAAAAAAAAAAAAAAAB////8AAAAAAAAAD/////4AAAAAAAAHQf8AAAAAAAAAAAAAAAAAAAAAAAAAAD////8AAAAAAAAAH/////gAAAAAAAAHwf8UAAAAAAAAAAAAAAAAAAAAAAAAAD////+AAAAAAAAAH/////AAAAAAAAADwf4AAgAAAAAAAAAAAAAAAAAAAAAAAH/////4AAAAAAAAH/////AAAAAAAAABwP5wBwAAAAAAAAAAAAAAAAAAAAAAAH/////+AAAAAAAAD////+AAAAAAAAAB8PxwAz4AAAAAAAAAAAAAAAAAAAAAAD//////4AAAAAAAB////8AAAAAAAAAA8AxQgf/AAAAAAAAAAAAAAAAAAAAAAH//////8AAAAAAAA////4AAAAAAAAAAcAAIAD/gIAAAAAAAAAAAAAAAAAAAAH///////gAAAAAAA////4AAAAAAAAAAMAAAAA/xwAAAAAAAAAAAAAAAAAAAAD///////gAAAAAAAf///4AAAAAAAAAADAAAAAf8AAAAAAAAAAAAAAAAAAAAAD///////gAAAAAAAf///4AAAAAAAAAAB+AAAA/4AAAAAAAAAAAAAAAAAAAAAB///////gAAAAAAAf///4AAAAAAAAAAAAGgAAOMAAAAAAAAAAAAAAAAAAAAAA///////AAAAAAAAf///8AAAAAAAAAAAAACAAAGAAAAAAAAAAAAAAAAAAAAAA//////+AAAAAAAAP///8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAf/////+AAAAAAAAP///8AAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAAAf/////8AAAAAAAAf///+AQAAAAAAAAAAAAB+CAAAAAAAAAAAAAAAAAAAAAAAP/////4AAAAAAAAf///+AwAAAAAAAAAAAAD8DAAAAAAAAAAAAAAAAAAAAAAAP/////4AAAAAAAA////+AwAAAAAAAAAAAAz8DgAAAAAAAAAAAAAAAAAAAAAAH/////4AAAAAAAA////8BwAAAAAAAAAAAB/8DgAAAAAAAAAAAAAAAAAAAAAAB/////4AAAAAAAA////8HwAAAAAAAAAAAD//HwAAAAAAAAAAAAAAAAAAAAAAAf////4AAAAAAAA////wPgAAAAAAAAAAAP//3wAAAAAAAAAAAAAAAAAAAAAAAP////wAAAAAAAA////gPgAAAAAAAAAAAP///wAAAAAAAAAAAAAAAAAAAAAAAP////wAAAAAAAAf//+APgAAAAAAAAAAAf///4AAAAAAAAAAAAAAAAAAAAAAAP////wAAAAAAAAf//+APgAAAAAAAAAAD////+AAAAAAAAAAAAAAAAAAAAAAAP////gAAAAAAAAP//+APAAAAAAAAAAAf////+AAAAAAAAAAAAAAAAAAAAAAAP////AAAAAAAAAP///AfAAAAAAAAAAA//////AAAAAAAAAAAAAAAAAAAAAAAf///4AAAAAAAAAP//+APAAAAAAAAAAA//////gAAAAAAAAAAAAAAAAAAAAAAf///gAAAAAAAAAH//+AOAAAAAAAAAAB//////wAAAAAAAAAAAAAAAAAAAAAAf///AAAAAAAAAAH//4AEAAAAAAAAAAA//////4AAAAAAAAAAAAAAAAAAAAAAf//+AAAAAAAAAAH//4AAAAAAAAAAAAA//////4AAAAAAAAAAAAAAAAAAAAAAf//+AAAAAAAAAAH//4AAAAAAAAAAAAA//////4AAAAAAAAAAAAAAAAAAAAAAf//+AAAAAAAAAAD//wAAAAAAAAAAAAA//////8AAAAAAAAAAAAAAAAAAAAAAf//8AAAAAAAAAAB//gAAAAAAAAAAAAAf/////4AAAAAAAAAAAAAAAAAAAAAA///4AAAAAAAAAAB//gAAAAAAAAAAAAAf/////4AAAAAAAAAAAAAAAAAAAAAA///wAAAAAAAAAAA//AAAAAAAAAAAAAAP/////4AAAAAAAAAAAAAAAAAAAAAA///wAAAAAAAAAAA/+AAAAAAAAAAAAAAP/AP//wAAAAAAAAAAAAAAAAAAAAAA///gAAAAAAAAAAA/4AAAAAAAAAAAAAAf8AG//gAAAAAAAAAAAAAAAAAAAAAA///AAAAAAAAAAAAYAAAAAAAAAAAAAAAOAAE//gAAAAAAAAAAAAAAAAAAAAAB//4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAf/AAABAAAAAAAAAAAAAAAAAAB//4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAAAAAAAAAAAAAAAAAAAAD//4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAAQAAAAAAAAAAAAAAAAAB//wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABYAAAAcAAAAAAAAAAAAAAAAAB/8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA4AAAAAAAAAAAAAAAAAD/8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYAAAAAAAAAAAAAAAAAD/gAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcAAADAAAAAAAAAAAAAAAAAAD/gAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcAAAHAAAAAAAAAAAAAAAAAAB/gAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAOAAAAAAAAAAAAAAAAAAD/gAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA4AAAAAAAAAAAAAAAAAAD+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB4AAAAAAAAAAAAAAAAAAH+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwAAAAAAAAAAAAAAAAAAH/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAH+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAH8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAH4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAH4AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABsAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwAAAAAAAAAAAAAAAAAAHwAAAAAA7+PgBD/AAAAAAAAAAAAAAAAAAAAAAAAAHgAAAAAAAAAAAAAAAAAD//gAAB//////////AAAAAAAAAAAAAAAAAAAAAAAABgAAAAAAAAAAAAAAAAB////8A////////////kAAAAAAAAAAAAAAAAAAAAAAz8AAAAAAAAAAAAAAAGD////4D/////////////4AAAAAAAAAAAAAAAAAAAAAb8AAAAAAAAAAAM/gB//////4//////////////+gAAAAAAAAAAAAAAAAAAAD9+AAAAAAAAb+///////////5////////////////wAAAAAAAAAAAAAAMAAAAZ+AAAAAAAA//////////////////////////////wAAAAAAAAAAAAAB///Ht/+AAAAAAAP/////////////////////////////+AAAAAAAAAAAXfoAf/////8AAAAAAA//////////////////////////////4AAAAAAAAX////////////wAAAAAAB//////////////////////////////gAAAAAAAD///////////PwAAAAAAf///////////////////////////////gAAAAAD+f///////////8AAAAAAP////////////////////////////////wAAAAAAf////////////AAAAD8A/////////////////////////////////wAAAAB4B////////////gQAAH+AB///////////////////////////////+AAAAAAAA////////////wAAA/wAH///////////////////////////////+AAAAAAAP//////////////AAAA//////////////////////////////////AAAAAAAP//////////////wD/3//////////////////////////////////4AAAAAP//////////////////////////////////////////////////////4A/wAH////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////";  // 1-degree land mask, bit-packed, row 0 = 89..90N, col 0 = 180..179W
+
+// ------------------------------------------------------------------ derived data
+let T = 0, N = 0, M = 0, capturedStep, capturedBy, hitsAt, capturesAt, cumulative, looksBefore, capturedBefore, targetScale;
+const TRAIL = 25, LOOK_TRAIL = 4;
+// Longitude jumps larger than this within one step are dateline or pole crossings: no line.
+const JUMP = 60;
+
+function load(data) {
+  D = data;
+  T = D.reward.length; N = D.satLatLon[0].length; M = D.targetLatLon.length;
+  capturedStep = new Array(M).fill(Infinity); capturedBy = new Array(M).fill(-1);
+  hitsAt = Array.from({length: T + 1}, () => new Set());      // step -> satellites that imaged something
+  capturesAt = Array.from({length: T + 1}, () => []);          // step -> targets first imaged at that step
+  for (const [step, target, sat] of D.captures) {
+    if (step < capturedStep[target] || (step === capturedStep[target] && sat < capturedBy[target])) {
+      capturedStep[target] = step; capturedBy[target] = sat;
+    }
+    hitsAt[step].add(sat);
+  }
+  capturedStep.forEach((step, target) => { if (step !== Infinity) capturesAt[step].push(target); });
+  cumulative = []; let acc = 0;
+  for (const r of D.reward) { acc += r; cumulative.push(acc); }
+  looksBefore = [0]; for (let t = 0; t < T; t++) looksBefore.push(looksBefore[t] + D.sensing[t].reduce((a, b) => a + b, 0));
+  capturedBefore = [0]; for (let t = 1; t <= T; t++) capturedBefore.push(capturedBefore[t - 1] + capturesAt[t].length);
+  // Dot size grows with priority relative to the typical target, so high-value targets
+  // (e.g. hotspots) stand out from the background; uniform fields get uniform dots.
+  const sortedPrio = D.targetPriority.slice().sort((a, b) => a - b);
+  const medianPrio = sortedPrio[Math.floor(M / 2)] || 1;
+  targetScale = D.targetPriority.map(p => Math.min(2.2, Math.max(1, Math.sqrt(p / medianPrio))));
+
+  document.getElementById("title").textContent = D.title;
+  document.title = D.title;
+  document.getElementById("summary").textContent =
+    `${N} satellites · ${M} targets · ${T} steps of ${D.stepSeconds} s · ` +
+    `${capturedBefore[T]} imaged (return ${cumulative[T - 1].toFixed(3)}) · ${looksBefore[T]} looks`;
+  bars.replaceChildren();
+  if (N <= 64) for (let n = 0; n < N; n++) { const d = document.createElement("div"); d.innerHTML = "<i></i>"; bars.appendChild(d); }
+  slider.max = T; state.step = 0; setPlaying(false);
+  resize();
+}
+
+// ------------------------------------------------------------------ CSV loading
+function parseCsv(text) {
+  const lines = text.trim().split(/\r?\n/), header = lines[0].split(",");
+  return lines.slice(1).map(line => { const cells = line.split(","); const row = {}; header.forEach((h, i) => row[h] = cells[i]); return row; });
+}
+const num = v => (v === "" || v === undefined ? null : +v);
+
+function fromCsv(files) {   // files: {satellites, looks, targets, captures} -> text
+  const sats = parseCsv(files.satellites), looks = parseCsv(files.looks);
+  const targets = parseCsv(files.targets), captures = parseCsv(files.captures);
+  const steps = Math.max(...sats.map(r => +r.step)), n = Math.max(...sats.map(r => +r.satellite)) + 1;
+  const grid = (fill) => Array.from({length: steps}, () => Array.from({length: n}, fill));
+  const data = {
+    title: "SarSat episode (loaded from CSV)",
+    stepSeconds: +sats.find(r => +r.step === 1).time_s,
+    beamHalfWidthDeg: null,
+    satLatLon: Array.from({length: steps + 1}, () => Array.from({length: n}, () => [0, 0])),
+    satAltKm: new Array(n).fill(0),
+    battery: Array.from({length: steps + 1}, () => new Array(n).fill(0)),
+    pointingDeg: grid(() => [0, 0]), sensing: grid(() => 0),
+    boresight: grid(() => [null, null]), footprint: grid(() => [[null, null], [null, null], [null, null], [null, null]]),
+    targetLatLon: targets.map(r => [+r.lat_deg, +r.lon_deg]),
+    targetOnLand: targets.map(r => +r.on_land), targetPriority: targets.map(r => +r.priority),
+    captures: captures.map(r => [+r.step, +r.target, +r.satellite]),
+    reward: new Array(steps).fill(0),
+  };
+  for (const r of sats) {
+    const t = +r.step, s = +r.satellite;
+    data.satLatLon[t][s] = [+r.lat_deg, +r.lon_deg]; data.battery[t][s] = +r.battery; data.satAltKm[s] = Math.round(+r.alt_km);
+    if (t >= 1) { data.pointingDeg[t - 1][s] = [num(r.az_cmd_deg) ?? 0, num(r.el_cmd_deg) ?? 0]; data.sensing[t - 1][s] = +r.sensing; }
+  }
+  for (const r of looks) {
+    const t = +r.step - 1, s = +r.satellite;
+    data.boresight[t][s] = [num(r.boresight_lat_deg), num(r.boresight_lon_deg)];
+    data.footprint[t][s] = [1, 2, 3, 4].map(i => [num(r[`corner${i}_lat_deg`]), num(r[`corner${i}_lon_deg`])]);
+  }
+  const seen = new Set();
+  for (const [step, target] of data.captures.slice().sort((a, b) => a[0] - b[0])) {
+    if (!seen.has(target)) { seen.add(target); data.reward[step - 1] += data.targetPriority[target]; }
+  }
+  return data;
+}
+
+async function loadFiles(fileList) {
+  const wanted = ["satellites", "looks", "targets", "captures"], texts = {};
+  for (const file of fileList) {
+    const key = wanted.find(w => file.name.toLowerCase().includes(w));
+    if (key) texts[key] = await file.text();
+  }
+  const missing = wanted.filter(w => !(w in texts));
+  if (missing.length) { alert("Missing file(s): " + missing.map(m => m + ".csv").join(", ")); return; }
+  try { load(fromCsv(texts)); } catch (err) { alert("Could not read the CSV files: " + err.message); }
+}
+document.getElementById("load").addEventListener("click", () => document.getElementById("files").click());
+document.getElementById("files").addEventListener("change", e => loadFiles(e.target.files));
+document.addEventListener("dragover", e => e.preventDefault());
+document.addEventListener("drop", e => { e.preventDefault(); loadFiles(e.dataTransfer.files); });
+
+// ------------------------------------------------------------------ land mask
+const landBits = Uint8Array.from(atob(LAND_MASK), c => c.charCodeAt(0));
+const land = document.createElement("canvas"); land.width = 360; land.height = 180;
+function paintLand() {
+  const ctx = land.getContext("2d"), css = getComputedStyle(document.documentElement);
+  ctx.fillStyle = css.getPropertyValue("--ocean"); ctx.fillRect(0, 0, 360, 180);
+  ctx.fillStyle = css.getPropertyValue("--land");
+  for (let i = 0; i < 64800; i++) if (landBits[i >> 3] & (128 >> (i & 7))) ctx.fillRect(i % 360, (i / 360) | 0, 1, 1);
+}
+// ------------------------------------------------------------------ map drawing
+const map = document.getElementById("map"), mctx = map.getContext("2d");
+const tl = document.getElementById("timeline"), tctx = tl.getContext("2d");
+const state = { step: 0, playing: false, hover: null };
+let W = 0, H = 0, dpr = 1;
+const X = lon => (lon + 180) / 360 * W, Y = lat => (90 - lat) / 180 * H;
+const cssVar = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+function resize() {
+  dpr = window.devicePixelRatio || 1;
+  W = map.clientWidth; H = W / 2;
+  map.width = W * dpr; map.height = H * dpr;
+  tl.width = tl.clientWidth * dpr; tl.height = tl.clientHeight * dpr;
+  paintLand(); draw();
+}
+
+function polygon(ctx, points, shift) {   // points: [[lat, lon], ...]; shift handles the dateline
+  ctx.beginPath();
+  points.forEach(([lat, lon], i) => { const x = X(lon + shift), y = Y(lat); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
+  ctx.closePath();
+}
+
+function unwrap(points) {   // copies of a polygon so one crossing the dateline is drawn on both sides
+  const lons = points.map(p => p[1]);
+  if (Math.max(...lons) - Math.min(...lons) <= JUMP) return [[points, 0]];
+  const fixed = points.map(([lat, lon]) => [lat, lon < 0 ? lon + 360 : lon]);
+  const span = Math.max(...fixed.map(p => p[1])) - Math.min(...fixed.map(p => p[1]));
+  return span <= JUMP ? [[fixed, 0], [fixed, -360]] : [];   // polar footprints: ring only
+}
+
+function draw() {
+  const css = getComputedStyle(document.documentElement);
+  if (!D) {   // empty template: land only, with instructions
+    mctx.setTransform(dpr, 0, 0, dpr, 0, 0); mctx.drawImage(land, 0, 0, W, H);
+    mctx.fillStyle = css.getPropertyValue("--text"); mctx.font = "15px system-ui, sans-serif"; mctx.textAlign = "center";
+    mctx.fillText("No episode loaded. Drop satellites.csv, looks.csv, targets.csv and captures.csv here,", W / 2, H / 2 - 10);
+    mctx.fillText("or click \"Load CSVs\". (python -m sarsat.evaluate writes them and an episode.html.)", W / 2, H / 2 + 14);
+    mctx.textAlign = "left"; return;
+  }
+  const t = state.step;
+  const cSat = css.getPropertyValue("--sat"), cTarget = css.getPropertyValue("--target");
+  const cCaptured = css.getPropertyValue("--captured"), cLook = css.getPropertyValue("--look");
+  const show = id => document.getElementById(id).checked;
+  mctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  mctx.imageSmoothingEnabled = true;
+  mctx.drawImage(land, 0, 0, W, H);
+
+  // graticule
+  mctx.strokeStyle = css.getPropertyValue("--grid"); mctx.lineWidth = 1;
+  for (let lon = -150; lon < 180; lon += 30) { mctx.beginPath(); mctx.moveTo(X(lon), 0); mctx.lineTo(X(lon), H); mctx.stroke(); }
+  for (let lat = -60; lat < 90; lat += 30) { mctx.beginPath(); mctx.moveTo(0, Y(lat)); mctx.lineTo(W, Y(lat)); mctx.stroke(); }
+
+  // targets
+  if (show("showTargets")) {
+    const r = M > 2000 ? 1.5 : M > 500 ? 2 : 3;
+    for (let m = 0; m < M; m++) {
+      const [lat, lon] = D.targetLatLon[m], done = capturedStep[m] <= t;
+      mctx.fillStyle = done ? cCaptured : cTarget;
+      mctx.globalAlpha = done ? 0.55 : 1;
+      mctx.beginPath(); mctx.arc(X(lon), Y(lat), r * targetScale[m], 0, 2 * Math.PI); mctx.fill();
+    }
+    mctx.globalAlpha = 1;
+    // capture flashes: rings fading over the three steps after a capture
+    for (let dt = 0; dt < 3; dt++) {
+      const s = t - dt; if (s < 1) break;
+      mctx.strokeStyle = cCaptured; mctx.lineWidth = 2; mctx.globalAlpha = 1 - dt / 3;
+      for (const m of capturesAt[s]) {
+        const [lat, lon] = D.targetLatLon[m];
+        mctx.beginPath(); mctx.arc(X(lon), Y(lat), 6 + 4 * dt, 0, 2 * Math.PI); mctx.stroke();
+      }
+    }
+    mctx.globalAlpha = 1;
+  }
+
+  // active looks: the current step in full, the previous few fading out. The footprint
+  // (~80 km) is only a few pixels wide, so each look also gets a ring at its boresight.
+  if (show("showLooks")) {
+    for (let dt = LOOK_TRAIL - 1; dt >= 0; dt--) {
+      const s = t - dt; if (s < 1) continue;
+      const alpha = 1 - dt / LOOK_TRAIL;
+      for (let n = 0; n < N; n++) {
+        if (!D.sensing[s - 1][n]) continue;
+        const color = hitsAt[s].has(n) ? cCaptured : cLook, corners = D.footprint[s - 1][n];
+        mctx.globalAlpha = alpha;
+        if (!corners.some(c => c[0] === null)) {
+          for (const [pts, shift] of unwrap(corners)) {
+            polygon(mctx, pts, shift);
+            mctx.fillStyle = color; mctx.fill();
+            mctx.strokeStyle = color; mctx.lineWidth = 1.5; mctx.stroke();
+          }
+        }
+        const bs = D.boresight[s - 1][n], sp = D.satLatLon[s][n];
+        if (bs[0] === null) continue;
+        mctx.strokeStyle = color; mctx.lineWidth = dt ? 1 : 2;
+        mctx.beginPath(); mctx.arc(X(bs[1]), Y(bs[0]), 6, 0, 2 * Math.PI); mctx.stroke();
+        if (dt === 0 && Math.abs(bs[1] - sp[1]) < JUMP) {
+          mctx.lineWidth = 1; mctx.setLineDash([3, 3]);
+          mctx.beginPath(); mctx.moveTo(X(sp[1]), Y(sp[0])); mctx.lineTo(X(bs[1]), Y(bs[0])); mctx.stroke();
+          mctx.setLineDash([]);
+        }
+      }
+    }
+    mctx.globalAlpha = 1;
+  }
+
+  // ground tracks
+  if (show("showTrails")) {
+    mctx.strokeStyle = cSat; mctx.lineWidth = N > 200 ? 1 : 2; mctx.lineCap = "round";
+    for (let n = 0; n < N; n++) {
+      for (let s = Math.max(1, t - TRAIL); s <= t; s++) {
+        const a = D.satLatLon[s - 1][n], b = D.satLatLon[s][n];
+        if (Math.abs(b[1] - a[1]) > JUMP) continue;            // dateline or pole crossing
+        mctx.globalAlpha = 0.15 + 0.85 * (1 - (t - s) / TRAIL);
+        mctx.beginPath(); mctx.moveTo(X(a[1]), Y(a[0])); mctx.lineTo(X(b[1]), Y(b[0])); mctx.stroke();
+      }
+    }
+    mctx.globalAlpha = 1;
+  }
+
+  // satellites
+  const rs = N > 200 ? 2.5 : 5;
+  mctx.font = "11px system-ui, sans-serif"; mctx.textBaseline = "middle";
+  for (let n = 0; n < N; n++) {
+    const [lat, lon] = D.satLatLon[t][n], x = X(lon), y = Y(lat);
+    mctx.fillStyle = cSat; mctx.beginPath(); mctx.arc(x, y, rs, 0, 2 * Math.PI); mctx.fill();
+    mctx.strokeStyle = css.getPropertyValue("--surface"); mctx.lineWidth = 1.5; mctx.stroke();
+    if (show("showLabels") && N <= 64) { mctx.fillStyle = css.getPropertyValue("--text"); mctx.fillText(String(n), x + rs + 3, y); }
+  }
+  drawTimeline(); updatePanel();
+}
+
+function drawTimeline() {
+  const w = tl.clientWidth, h = tl.clientHeight, css = getComputedStyle(document.documentElement);
+  tctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  tctx.clearRect(0, 0, w, h);
+  const pad = { l: 36, r: 10, t: 8, b: 18 }, pw = w - pad.l - pad.r, ph = h - pad.t - pad.b;
+  const ymax = Math.max(cumulative[T - 1], 1e-6);
+  const px = s => pad.l + s / T * pw, py = v => pad.t + ph - v / ymax * ph;
+  tctx.strokeStyle = css.getPropertyValue("--grid"); tctx.lineWidth = 1;
+  [0, 0.5, 1].forEach(f => { tctx.beginPath(); tctx.moveTo(pad.l, py(f * ymax)); tctx.lineTo(w - pad.r, py(f * ymax)); tctx.stroke(); });
+  tctx.fillStyle = css.getPropertyValue("--text-2"); tctx.font = "10px system-ui, sans-serif"; tctx.textBaseline = "middle"; tctx.textAlign = "right";
+  [0, 0.5, 1].forEach(f => tctx.fillText((f * ymax).toFixed(2), pad.l - 4, py(f * ymax)));
+  tctx.textAlign = "center"; tctx.textBaseline = "top";
+  tctx.fillText("cumulative return vs step", w / 2, h - pad.b + 4);
+  tctx.strokeStyle = css.getPropertyValue("--captured"); tctx.lineWidth = 2; tctx.lineJoin = "round";
+  tctx.beginPath(); tctx.moveTo(px(0), py(0));
+  cumulative.forEach((v, i) => tctx.lineTo(px(i + 1), py(v)));
+  tctx.stroke();
+  tctx.strokeStyle = css.getPropertyValue("--text"); tctx.lineWidth = 1;
+  tctx.beginPath(); tctx.moveTo(px(state.step), pad.t); tctx.lineTo(px(state.step), pad.t + ph); tctx.stroke();
+}
+
+const bars = document.getElementById("batteryBars");
+function updatePanel() {
+  const t = state.step, mins = t * D.stepSeconds / 60;
+  document.getElementById("stepLabel").textContent = `${t} / ${T}`;
+  document.getElementById("timeLabel").textContent = `${Math.floor(mins / 60)} h ${String(Math.round(mins % 60)).padStart(2, "0")} min`;
+  document.getElementById("capturedLabel").textContent = `${capturedBefore[t]} / ${M}`;
+  document.getElementById("returnLabel").textContent = (t ? cumulative[t - 1] : 0).toFixed(3);
+  document.getElementById("looksLabel").textContent = looksBefore[t];
+  const b = D.battery[t], mean = b.reduce((a, v) => a + v, 0) / N;
+  document.getElementById("batteryLabel").textContent = `${(100 * mean).toFixed(0)}% (min ${(100 * Math.min(...b)).toFixed(0)}%)`;
+  if (N <= 64) [...bars.children].forEach((d, n) => { d.firstChild.style.height = (100 * b[n]) + "%"; d.title = `satellite ${n}: ${(100 * b[n]).toFixed(0)}%`; });
+  slider.value = t;
+}
+
+// ------------------------------------------------------------------ interaction
+const slider = document.getElementById("slider");
+function setStep(s) { if (!D) return; state.step = Math.max(0, Math.min(T, s)); draw(); }
+slider.addEventListener("input", () => setStep(+slider.value));
+document.getElementById("back").addEventListener("click", () => setStep(state.step - 1));
+document.getElementById("fwd").addEventListener("click", () => setStep(state.step + 1));
+const playBtn = document.getElementById("play");
+let timer = null;
+function setPlaying(p) {
+  state.playing = p; playBtn.textContent = p ? "Pause" : "Play";
+  clearInterval(timer);
+  if (p) timer = setInterval(() => { if (state.step >= T) setPlaying(false); else setStep(state.step + 1); }, 1000 / +document.getElementById("speed").value);
+}
+playBtn.addEventListener("click", () => setPlaying(!state.playing));
+document.getElementById("speed").addEventListener("change", () => { if (state.playing) setPlaying(true); });
+document.addEventListener("keydown", e => {
+  if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return;
+  if (e.code === "Space") { e.preventDefault(); setPlaying(!state.playing); }
+  if (e.code === "ArrowRight") setStep(state.step + 1);
+  if (e.code === "ArrowLeft") setStep(state.step - 1);
+});
+["showTrails", "showLooks", "showTargets", "showLabels"].forEach(id => document.getElementById(id).addEventListener("change", draw));
+tl.addEventListener("click", e => { const r = tl.getBoundingClientRect(); setStep(Math.round((e.clientX - r.left - 36) / (tl.clientWidth - 46) * T)); });
+
+const tip = document.getElementById("tooltip");
+map.addEventListener("mousemove", e => {
+  if (!D) return;
+  const r = map.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top, t = state.step;
+  let best = null, bestD = 100;   // 10 px hit radius
+  for (let n = 0; n < N; n++) { const [lat, lon] = D.satLatLon[t][n]; const d = (X(lon) - mx) ** 2 + (Y(lat) - my) ** 2; if (d < bestD) { bestD = d; best = ["sat", n]; } }
+  if (!best) for (let m = 0; m < M; m++) { const [lat, lon] = D.targetLatLon[m]; const d = (X(lon) - mx) ** 2 + (Y(lat) - my) ** 2; if (d < bestD) { bestD = d; best = ["target", m]; } }
+  if (!best) { tip.style.display = "none"; return; }
+  let text;
+  if (best[0] === "sat") {
+    const n = best[1], [lat, lon] = D.satLatLon[t][n];
+    text = `Satellite ${n}\n${lat.toFixed(2)}°, ${lon.toFixed(2)}° · ${D.satAltKm[n]} km\nbattery ${(100 * D.battery[t][n]).toFixed(0)}%`;
+    if (t >= 1) { const [az, el] = D.pointingDeg[t - 1][n]; text += `\naz ${az.toFixed(1)}°, el ${el.toFixed(1)}° · ${D.sensing[t - 1][n] ? (hitsAt[t].has(n) ? "sensing, target imaged" : "sensing") : "not sensing"}`; }
+  } else {
+    const m = best[1], [lat, lon] = D.targetLatLon[m];
+    text = `Target ${m} (${D.targetOnLand[m] ? "land" : "water"})\n${lat.toFixed(2)}°, ${lon.toFixed(2)}° · priority ${D.targetPriority[m]}\n`;
+    text += capturedStep[m] === Infinity ? "never imaged" : capturedStep[m] <= t ? `imaged at step ${capturedStep[m]} by satellite ${capturedBy[m]}` : `imaged later (step ${capturedStep[m]})`;
+  }
+  tip.textContent = text; tip.style.display = "block";
+  tip.style.left = Math.min(mx + 12, r.width - 200) + "px"; tip.style.top = (my + 12) + "px";
+});
+map.addEventListener("mouseleave", () => { tip.style.display = "none"; });
+
+window.addEventListener("resize", resize);
+window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", resize);
+if (D) load(D); else resize();
+</script>
+</body>
+</html>

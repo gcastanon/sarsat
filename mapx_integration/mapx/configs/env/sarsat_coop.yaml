@@ -1,0 +1,24 @@
+# ---Environment Configs---
+# CoopSarSat: SarSat with the beam-value / look-ahead observation and a compact global
+# state (sarsat/coop.py). Launch with mapx_integration/train_sarsat.py.
+defaults:
+  - _self_
+  - scenario: sarsat-100sat-hotspots
+
+env_name: SarSatCoop
+
+# Fraction of the priority imaged, unaffected by reward_scale.
+eval_metric: fraction_imaged
+
+# Parameters are shared and the agents are interchangeable; a 100-way one-hot adds nothing.
+implicit_agent_id: True
+
+# Returns are in [0, 1] over 180 steps; scale them so value targets are O(1).
+reward_scale: 10.0
+fused_auto_reset: True
+
+kwargs:
+  time_limit: 180
+  num_slots: 4          # ranked beams in the observation
+  num_candidates: 64    # accessible targets considered when ranking beams
+  horizon: 16           # look-ahead steps over the hotspot clusters
