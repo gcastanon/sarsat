@@ -29,6 +29,9 @@ budget, so events200 keeps the lean version, matching how its baselines were pro
 Run (CPU only -- the GPU may be busy training)::
 
     JAX_PLATFORMS=cpu python scripts/export_viewer_runs.py --seed 1000
+
+``--run <run-dir> --system ippo|mappo [--scenario hotspots100|events200]`` exports just
+that training run's best checkpoint instead, into ``<scenario>-<run-dir name>/``.
 """
 
 from __future__ import annotations
@@ -196,9 +199,29 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--seed", type=int, default=1000)
     parser.add_argument("--out-dir", type=Path, default=Path("runs/viewer"))
+    parser.add_argument(
+        "--run",
+        default=None,
+        help="Export only this training run's best checkpoint (a run directory such as "
+        "~/marl/runs/ippo_v1), named after the directory, instead of the built-in set.",
+    )
+    parser.add_argument("--system", choices=["ippo", "mappo"], default="mappo")
+    parser.add_argument("--scenario", choices=sorted(SCENARIO_TITLE), default="hotspots100")
     args = parser.parse_args()
 
     rows = []
+    if args.run is not None:
+        scenario = args.scenario
+        reference.precompute = lean_precompute if scenario == "events200" else _default_precompute
+        label = Path(os.path.expanduser(args.run)).name
+        print(f"running {scenario} / {label} (loading {args.run}) ...", flush=True)
+        policy, trained_env, checkpoint_dir, step = build_trained_policy(args.run, args.system)
+        print(f"  checkpoint {checkpoint_dir} (step {step})", flush=True)
+        row = export_one(scenario, label, trained_env, policy, args.seed, args.out_dir)
+        row["expected"] = load_trained_expected(args.run, args.seed)
+        report([row], args.seed)
+        return
+
     for scenario in ("hotspots100", "events200"):
         # See the module docstring: only events200 needs the lean (memory-saving) tables.
         reference.precompute = lean_precompute if scenario == "events200" else _default_precompute
@@ -216,13 +239,17 @@ def main() -> None:
         row = export_one(scenario, policy_label, trained_env, policy, args.seed, args.out_dir)
         row["expected"] = load_trained_expected(run_dir, args.seed)
         rows.append(row)
+    report(rows, args.seed)
 
+
+def report(rows: list, seed: int) -> None:
+    """Print each exported episode's return next to its known value, if any."""
     # Known seed-1000 returns to check against: greedy_beam/coop_plan from
     # runs/baselines/*.jsonl, the trained policy from its run's eval_seeds.json.
     for row in rows:
         if "expected" not in row:
             baselines = ec.load_baselines(str(REPO_ROOT), row["scenario"])
-            row["expected"] = baselines.get(args.seed, {}).get(row["policy"])
+            row["expected"] = baselines.get(seed, {}).get(row["policy"])
 
     print()
     header = f"{'scenario':12s} {'policy':12s} {'return':>10s} {'expected':>10s} {'files':>7s}"
