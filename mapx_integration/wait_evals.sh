@@ -7,7 +7,9 @@ count="$1"; shift
 while true; do
   n=$(grep -a -c EVALUATOR "$1/train.log" 2>/dev/null)
   [ "${n:-0}" -ge "$count" ] && break
-  grep -a -q -E 'Traceback|completed in' "$@" 2>/dev/null && break
+  for r in "$@"; do
+    grep -a -q -E 'Traceback|completed in' "$r/train.log" 2>/dev/null && break 2
+  done
   sleep 60
 done
 for r in "$@"; do
