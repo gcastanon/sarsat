@@ -2441,5 +2441,572 @@
       "run": "ev_mappo_e"
     }
   ],
+  "events500": [
+    {
+      "label": "Random",
+      "kind": "reference",
+      "mean": 0.041003,
+      "std": 0.003491,
+      "min": 0.036938,
+      "max": 0.047738,
+      "n": 16,
+      "beats_greedy_beam": null,
+      "per_seed": [
+        {
+          "seed": 1000,
+          "return": 0.038046
+        },
+        {
+          "seed": 1001,
+          "return": 0.047738
+        },
+        {
+          "seed": 1002,
+          "return": 0.043492
+        },
+        {
+          "seed": 1003,
+          "return": 0.039769
+        },
+        {
+          "seed": 1004,
+          "return": 0.040723
+        },
+        {
+          "seed": 1005,
+          "return": 0.038062
+        },
+        {
+          "seed": 1006,
+          "return": 0.037708
+        },
+        {
+          "seed": 1007,
+          "return": 0.036938
+        },
+        {
+          "seed": 1008,
+          "return": 0.037708
+        },
+        {
+          "seed": 1009,
+          "return": 0.045446
+        },
+        {
+          "seed": 1010,
+          "return": 0.046769
+        },
+        {
+          "seed": 1011,
+          "return": 0.038569
+        },
+        {
+          "seed": 1012,
+          "return": 0.040185
+        },
+        {
+          "seed": 1013,
+          "return": 0.044092
+        },
+        {
+          "seed": 1014,
+          "return": 0.037538
+        },
+        {
+          "seed": 1015,
+          "return": 0.043262
+        }
+      ]
+    },
+    {
+      "label": "Greedy",
+      "kind": "reference",
+      "mean": 0.217171,
+      "std": 0.01299,
+      "min": 0.199569,
+      "max": 0.251738,
+      "n": 16,
+      "beats_greedy_beam": null,
+      "per_seed": [
+        {
+          "seed": 1000,
+          "return": 0.215631
+        },
+        {
+          "seed": 1001,
+          "return": 0.204123
+        },
+        {
+          "seed": 1002,
+          "return": 0.220431
+        },
+        {
+          "seed": 1003,
+          "return": 0.205969
+        },
+        {
+          "seed": 1004,
+          "return": 0.215892
+        },
+        {
+          "seed": 1005,
+          "return": 0.205046
+        },
+        {
+          "seed": 1006,
+          "return": 0.211754
+        },
+        {
+          "seed": 1007,
+          "return": 0.227446
+        },
+        {
+          "seed": 1008,
+          "return": 0.204308
+        },
+        {
+          "seed": 1009,
+          "return": 0.208723
+        },
+        {
+          "seed": 1010,
+          "return": 0.231477
+        },
+        {
+          "seed": 1011,
+          "return": 0.251738
+        },
+        {
+          "seed": 1012,
+          "return": 0.199569
+        },
+        {
+          "seed": 1013,
+          "return": 0.221538
+        },
+        {
+          "seed": 1014,
+          "return": 0.226569
+        },
+        {
+          "seed": 1015,
+          "return": 0.224523
+        }
+      ]
+    },
+    {
+      "label": "Greedy-Beam",
+      "kind": "reference",
+      "mean": 0.39353,
+      "std": 0.023949,
+      "min": 0.362354,
+      "max": 0.445015,
+      "n": 16,
+      "beats_greedy_beam": null,
+      "per_seed": [
+        {
+          "seed": 1000,
+          "return": 0.365246
+        },
+        {
+          "seed": 1001,
+          "return": 0.405508
+        },
+        {
+          "seed": 1002,
+          "return": 0.408446
+        },
+        {
+          "seed": 1003,
+          "return": 0.368877
+        },
+        {
+          "seed": 1004,
+          "return": 0.372246
+        },
+        {
+          "seed": 1005,
+          "return": 0.391169
+        },
+        {
+          "seed": 1006,
+          "return": 0.362615
+        },
+        {
+          "seed": 1007,
+          "return": 0.421446
+        },
+        {
+          "seed": 1008,
+          "return": 0.403954
+        },
+        {
+          "seed": 1009,
+          "return": 0.3778
+        },
+        {
+          "seed": 1010,
+          "return": 0.405892
+        },
+        {
+          "seed": 1011,
+          "return": 0.445015
+        },
+        {
+          "seed": 1012,
+          "return": 0.381323
+        },
+        {
+          "seed": 1013,
+          "return": 0.362354
+        },
+        {
+          "seed": 1014,
+          "return": 0.422892
+        },
+        {
+          "seed": 1015,
+          "return": 0.401692
+        }
+      ]
+    },
+    {
+      "label": "Solo-Plan",
+      "kind": "reference",
+      "mean": 0.657649,
+      "std": 0.034799,
+      "min": 0.575431,
+      "max": 0.7126,
+      "n": 16,
+      "beats_greedy_beam": null,
+      "per_seed": [
+        {
+          "seed": 1000,
+          "return": 0.6032
+        },
+        {
+          "seed": 1001,
+          "return": 0.653523
+        },
+        {
+          "seed": 1002,
+          "return": 0.652123
+        },
+        {
+          "seed": 1003,
+          "return": 0.678031
+        },
+        {
+          "seed": 1004,
+          "return": 0.651985
+        },
+        {
+          "seed": 1005,
+          "return": 0.636677
+        },
+        {
+          "seed": 1006,
+          "return": 0.638662
+        },
+        {
+          "seed": 1007,
+          "return": 0.6862
+        },
+        {
+          "seed": 1008,
+          "return": 0.7126
+        },
+        {
+          "seed": 1009,
+          "return": 0.679539
+        },
+        {
+          "seed": 1010,
+          "return": 0.696785
+        },
+        {
+          "seed": 1011,
+          "return": 0.681785
+        },
+        {
+          "seed": 1012,
+          "return": 0.575431
+        },
+        {
+          "seed": 1013,
+          "return": 0.623554
+        },
+        {
+          "seed": 1014,
+          "return": 0.682492
+        },
+        {
+          "seed": 1015,
+          "return": 0.6698
+        }
+      ]
+    },
+    {
+      "label": "Coop-Dedup",
+      "kind": "reference",
+      "mean": 0.431583,
+      "std": 0.025998,
+      "min": 0.395508,
+      "max": 0.484831,
+      "n": 16,
+      "beats_greedy_beam": null,
+      "per_seed": [
+        {
+          "seed": 1000,
+          "return": 0.3996
+        },
+        {
+          "seed": 1001,
+          "return": 0.439631
+        },
+        {
+          "seed": 1002,
+          "return": 0.444308
+        },
+        {
+          "seed": 1003,
+          "return": 0.406062
+        },
+        {
+          "seed": 1004,
+          "return": 0.417477
+        },
+        {
+          "seed": 1005,
+          "return": 0.417708
+        },
+        {
+          "seed": 1006,
+          "return": 0.395508
+        },
+        {
+          "seed": 1007,
+          "return": 0.468662
+        },
+        {
+          "seed": 1008,
+          "return": 0.449385
+        },
+        {
+          "seed": 1009,
+          "return": 0.4064
+        },
+        {
+          "seed": 1010,
+          "return": 0.455277
+        },
+        {
+          "seed": 1011,
+          "return": 0.484831
+        },
+        {
+          "seed": 1012,
+          "return": 0.429138
+        },
+        {
+          "seed": 1013,
+          "return": 0.400862
+        },
+        {
+          "seed": 1014,
+          "return": 0.4546
+        },
+        {
+          "seed": 1015,
+          "return": 0.435877
+        }
+      ]
+    },
+    {
+      "label": "Coop-Plan",
+      "kind": "reference",
+      "mean": 0.88314,
+      "std": 0.010588,
+      "min": 0.863031,
+      "max": 0.903539,
+      "n": 16,
+      "beats_greedy_beam": null,
+      "per_seed": [
+        {
+          "seed": 1000,
+          "return": 0.874739
+        },
+        {
+          "seed": 1001,
+          "return": 0.890015
+        },
+        {
+          "seed": 1002,
+          "return": 0.878923
+        },
+        {
+          "seed": 1003,
+          "return": 0.879123
+        },
+        {
+          "seed": 1004,
+          "return": 0.903539
+        },
+        {
+          "seed": 1005,
+          "return": 0.889369
+        },
+        {
+          "seed": 1006,
+          "return": 0.890539
+        },
+        {
+          "seed": 1007,
+          "return": 0.878615
+        },
+        {
+          "seed": 1008,
+          "return": 0.895969
+        },
+        {
+          "seed": 1009,
+          "return": 0.897185
+        },
+        {
+          "seed": 1010,
+          "return": 0.883739
+        },
+        {
+          "seed": 1011,
+          "return": 0.880585
+        },
+        {
+          "seed": 1012,
+          "return": 0.863031
+        },
+        {
+          "seed": 1013,
+          "return": 0.874015
+        },
+        {
+          "seed": 1014,
+          "return": 0.867169
+        },
+        {
+          "seed": 1015,
+          "return": 0.883692
+        }
+      ]
+    },
+    {
+      "label": "MAPPO, credit_mix 0.5, 16 envs (Runpod A40)",
+      "kind": "rl",
+      "mean": 0.867518,
+      "std": 0.01175,
+      "min": 0.844154,
+      "max": 0.88957,
+      "n": 16,
+      "beats_greedy_beam": "16/16",
+      "per_seed": [
+        {
+          "seed": 1000,
+          "return": 0.855046,
+          "greedy_beam": 0.365246,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1001,
+          "return": 0.874585,
+          "greedy_beam": 0.405508,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1002,
+          "return": 0.866523,
+          "greedy_beam": 0.408446,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1003,
+          "return": 0.864447,
+          "greedy_beam": 0.368877,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1004,
+          "return": 0.88957,
+          "greedy_beam": 0.372246,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1005,
+          "return": 0.873692,
+          "greedy_beam": 0.391169,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1006,
+          "return": 0.874169,
+          "greedy_beam": 0.362615,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1007,
+          "return": 0.862815,
+          "greedy_beam": 0.421446,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1008,
+          "return": 0.880215,
+          "greedy_beam": 0.403954,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1009,
+          "return": 0.883739,
+          "greedy_beam": 0.3778,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1010,
+          "return": 0.865539,
+          "greedy_beam": 0.405892,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1011,
+          "return": 0.868908,
+          "greedy_beam": 0.445015,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1012,
+          "return": 0.844154,
+          "greedy_beam": 0.381323,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1013,
+          "return": 0.856631,
+          "greedy_beam": 0.362354,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1014,
+          "return": 0.850169,
+          "greedy_beam": 0.422892,
+          "beats_greedy_beam": true
+        },
+        {
+          "seed": 1015,
+          "return": 0.870092,
+          "greedy_beam": 0.401692,
+          "beats_greedy_beam": true
+        }
+      ],
+      "run": "ev500_mappo_a"
+    }
+  ],
   "_notes": []
 }

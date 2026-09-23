@@ -928,3 +928,50 @@ what fits under the WSL2 allocation cap, not a measurement. Because a satellite'
 future now matters, a learner needs the cluster look-ahead more than on the 200-satellite
 benchmark, and the same-step duplication that limited issue 25 will be worse with 500
 satellites; both are things to watch in the first run.
+
+## Issue 27 - First learner on sarsat-500sat-events, trained on Runpod
+
+**Question.** Does the issue-23 recipe carry to 500 satellites, and where does it land
+between `solo_plan` (0.658) and `coop_plan` (0.883)?
+
+**Method.** One `rec_mappo` run (`ev500_mappo_a`) with `launch.sh`'s recipe (slot-mixture
+head, `credit_mix` 0.5, ranked contention, LR decay), 16 environments x 180-step rollouts,
+on one A40 48 GB rented on Runpod (the local GPU was busy and its WSL2 allocation cap would
+not hold 16 environments at this size). It was stopped by a plateau rule agreed with the
+user before it started: after 20 evaluations, stop once the last 10 neither beat the
+earlier best by more than 0.005 nor average more than 0.003 above the 10 before them. The
+best checkpoint was replayed greedily on the paired seeds 1000-1015 (`eval_checkpoint.py`).
+Run record: `runs/ev500_mappo_a/run.json`; state and costs: `runs/campaign.json`.
+
+**Findings.**
+
+| `sarsat-500sat-events`, seeds 1000-1015 | mean | std | vs MAPPO, per seed |
+|---|---|---|---|
+| `greedy_beam` | 0.394 | 0.024 | MAPPO ahead 16/16 |
+| `solo_plan` | 0.658 | 0.035 | MAPPO ahead 16/16 |
+| **MAPPO, credit_mix 0.5 (`ev500_mappo_a`, update 600)** | **0.868** | 0.012 | |
+| `coop_plan` | 0.883 | 0.011 | MAPPO behind 16/16, by 0.012-0.020 |
+
+Learning was fast: 0.836 on MAPX's own evaluation after 30 updates, 0.870 by update 210,
+then flat (0.857-0.872) until the rule stopped it at update ~660; the best checkpoint is
+update 600. Training ran at 259 environment steps per second (423 while evaluating),
+GPU-bound at 100% with 34.5 GB in use; the whole run, setup to teardown, took 2.4 hours
+and cost $1.19.
+
+On seed 1000 at step 120 (`docs/viewer-500sat-seed1000-step120.jpg`) the policy has kept
+a mean battery of 67% and missed 439 of the 5,000 event targets; `greedy_beam` and
+`solo_plan` are both down to 14% battery and have missed 2,564 and 1,772, while
+`coop_plan` holds 79% and has missed 336. The learner takes 40% fewer looks than the
+independent policies, close to `coop_plan`'s count.
+
+**Decision.** Report it as the other two benchmarks are reported: the learner beats both
+independent references decisively and trails `coop_plan` slightly, at 98% of it.
+
+**Consequences.** The ease of learning is itself a finding about the benchmark: hotspot
+events carry 77% of the priority and the observation already scores each beam, so
+"spend charge only on events" is quickly within reach, and `solo_plan` turns out to be a
+weak heuristic here rather than a ceiling for independent learners. How much of the
+learner's 0.21 over `solo_plan` is coordination (its observation carries teammate
+contention and team access counts) and how much is better rationing has not been
+measured; `diagnose_policy.py` or an IPPO run with contention features removed would
+separate the two. One training seed, and no pure team-reward run at this size yet.

@@ -59,6 +59,8 @@ RUN_INFO = {
     "ev_mappo_c": ("events200", "MAPPO, credit_mix 0.1, look-ahead 48"),
     "ev_mappo_d": ("events200", "MAPPO, credit_mix 0.1"),
     "ev_mappo_e": ("events200", "MAPPO, credit_mix 0.25, gamma 0.998 / lambda 0.98"),
+    # sarsat-500sat-events (500 satellites, windowed)
+    "ev500_mappo_a": ("events500", "MAPPO, credit_mix 0.5, 16 envs (Runpod A40)"),
 }
 
 # ippo_v3 also appears in DECISIONS.md (slot-0 head, credit_mix 0.5) but is superseded by
@@ -149,7 +151,9 @@ def main():
     parser.add_argument(
         "--runs-dir",
         default=os.path.expanduser("~/marl/runs"),
-        help="Directory holding one subdirectory per trained run (WSL path by default).",
+        help="Directory holding one subdirectory per trained run (WSL training-box path "
+        "by default). To build against the eval_seeds.json copies committed in this repo "
+        "(e.g. on Windows, or for scenario events500), pass --runs-dir runs/marl.",
     )
     parser.add_argument("--out", default=DEFAULT_RESULTS_OUT)
     args = parser.parse_args()
@@ -183,7 +187,7 @@ def main():
     out = dict(results)
     out["_notes"] = notes
     os.makedirs(os.path.dirname(args.out), exist_ok=True)
-    with open(args.out, "w", encoding="utf-8") as f:
+    with open(args.out, "w", encoding="utf-8", newline="\n") as f:
         json.dump(out, f, indent=2)
 
     print(f"\nWrote {args.out}")

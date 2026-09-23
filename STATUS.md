@@ -1,6 +1,6 @@
 # Status — read this first in a new chat
 
-_Last updated: 2026-09-23 (issue 26). Keep this file short and current; history lives in git and
+_Last updated: 2026-09-23 (issue 27). Keep this file short and current; history lives in git and
 the reasoning lives in DECISIONS.md._
 
 ## Where things live
@@ -8,7 +8,7 @@ the reasoning lives in DECISIONS.md._
 | What | Where | Notes |
 |---|---|---|
 | Source of truth | this git repository | clone it at the start of a chat, push at the end |
-| Design rationale | `DECISIONS.md` (issues 1-26) | append an issue for any non-obvious choice |
+| Design rationale | `DECISIONS.md` (issues 1-27) | append an issue for any non-obvious choice |
 | Deferred ideas | `IMPROVEMENTS.md` | move an item out when it is built |
 | MAPX integration | `mapx_integration/` | drop-in files for the MAPX repo, see its README |
 | Claude Project knowledge | mirrors of the three docs above + this file | search only; not the source of truth |
@@ -39,8 +39,9 @@ the reasoning lives in DECISIONS.md._
 * `sarsat-500sat-events` (issue 26): 500 satellites in 50 Walker planes, 100 event
   clusters over 15,000 background targets, 5% duty cycle. Seeds 1000-1015: `greedy_beam`
   0.394, `solo_plan` 0.658, `coop_plan` 0.883, each ahead on 16/16 seeds -- the first
-  benchmark where temporal planning *and* cooperation both pay. Untrained so far;
-  `launch.sh` guesses 4 environments at 500 satellites. Reference-policy evaluation at
+  benchmark where temporal planning *and* cooperation both pay. MAPPO (`ev500_mappo_a`,
+  16 envs on a Runpod A40, 2.4 h, $1.19) reaches 0.868, 98% of `coop_plan`, beating both
+  independent references on 16/16 seeds (issue 27). Runpod workflow: `CLAUDE.md`. Reference-policy evaluation at
   this size uses `sarsat.reference.lean_precompute` (~4 GB) and ran in a Windows-side
   CPU venv (`.venv`, git-ignored) while the GPU was busy.
 * Results deck: `reports/sarsat_marl_results.html` (built by `scripts/collect_results.py`

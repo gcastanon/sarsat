@@ -30,8 +30,9 @@ Run (CPU only -- the GPU may be busy training)::
 
     JAX_PLATFORMS=cpu python scripts/export_viewer_runs.py --seed 1000
 
-``--run <run-dir> --system ippo|mappo [--scenario hotspots100|events200]`` exports just
-that training run's best checkpoint instead, into ``<scenario>-<run-dir name>/``.
+``--run <run-dir> --system ippo|mappo [--scenario hotspots100|events200|events500]`` exports
+just that training run's best checkpoint instead, into ``<scenario>-<run-dir name>/``; add
+``--with-references`` to export ``greedy_beam``, ``solo_plan`` and ``coop_plan`` beside it.
 """
 
 from __future__ import annotations
@@ -210,6 +211,12 @@ def main() -> None:
     )
     parser.add_argument("--system", choices=["ippo", "mappo"], default="mappo")
     parser.add_argument("--scenario", choices=sorted(SCENARIO_TITLE), default="hotspots100")
+    parser.add_argument(
+        "--with-references",
+        action="store_true",
+        help="With --run, also export greedy_beam, solo_plan and coop_plan on --scenario, "
+        "so the trained episode can be compared step by step with the references.",
+    )
     args = parser.parse_args()
 
     rows = []
@@ -224,7 +231,15 @@ def main() -> None:
         print(f"  checkpoint {checkpoint_dir} (step {step})", flush=True)
         row = export_one(scenario, label, trained_env, policy, args.seed, args.out_dir)
         row["expected"] = load_trained_expected(args.run, args.seed)
-        report([row], args.seed)
+        rows = [row]
+        if args.with_references:
+            env = build_reference_env(scenario)
+            for policy_name in ("greedy_beam", "solo_plan", "coop_plan"):
+                print(f"running {scenario} / {policy_name} ...", flush=True)
+                rows.append(
+                    export_one(scenario, policy_name, env, policy_name, args.seed, args.out_dir)
+                )
+        report(rows, args.seed)
         return
 
     for scenario in ("hotspots100", "events200"):

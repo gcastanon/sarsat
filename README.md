@@ -54,10 +54,18 @@ planes, 20,000 targets, 5% duty cycle, issue 26). On the latter, seeds 1000-1015
 |---|---|
 | `greedy_beam` | 0.39 |
 | `solo_plan` (independent, plans its own future) | 0.66 |
+| MAPPO, this recipe (trained on one rented A40, 2.4 h, $1.19) | 0.87 |
 | `coop_plan` (centralised planner) | 0.88 |
 
-so planning ahead and cooperating are each worth a third or more, on every seed. No
-learner has been trained on it yet.
+so planning ahead and cooperating are each worth a third or more, on every seed, and the
+learner reaches 98% of the planner (issue 27).
+
+![Four policies at the same moment of one 500-satellite episode](docs/viewer-500sat-seed1000-step120.jpg)
+
+*Seed 1000, step 120 of 180. Top: `greedy_beam`, `solo_plan`; bottom: the trained MAPPO
+policy, `coop_plan`. The independent policies have spent their batteries (14%) on
+background targets when events open; the trained policy keeps 67% and misses a sixth as
+many event targets.*
 
 ## 3. Train
 

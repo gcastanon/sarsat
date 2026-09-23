@@ -1,13 +1,16 @@
 # ruff: noqa: RUF001, E501  (presentation strings: typographic characters, long lines)
-"""Build reports/sarsat_marl_results.html: a 10-slide, self-contained HTML deck.
+"""Build reports/sarsat_marl_results.html: a self-contained HTML deck.
 
 Reads reports/results.json (produced by scripts/collect_results.py) at BUILD time and
 inlines the numbers directly into the generated markup -- the resulting HTML file has no
-runtime dependencies (no fetch, no external CSS/JS/fonts).
+runtime dependencies (no fetch, no external CSS/JS/fonts). 12 slides (100-agent +
+200-agent + 500-agent summary/gap) plus a 13th 500-agent "best approach" slide once
+events500 has a trained RL row.
 
 Run: python scripts/build_deck.py
 """
 
+import base64
 import json
 import os
 import re
@@ -15,8 +18,11 @@ import re
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RESULTS_PATH = os.path.join(REPO_ROOT, "reports", "results.json")
 OUT_PATH = os.path.join(REPO_ROOT, "reports", "sarsat_marl_results.html")
-FOOTER_TEXT = "SarSat MARL — 2026-09-22"
-TOTAL_SLIDES = 10
+# Four viewer panels of one 500-satellite episode (seed 1000, step 120), captured from
+# sarsat/viewer.html; the slide is skipped when the image is absent.
+VIEWER_500_PATH = os.path.join(REPO_ROOT, "docs", "viewer-500sat-seed1000-step120.jpg")
+FOOTER_TEXT = "SarSat MARL — 2026-09-23"
+TOTAL_SLIDES = 10  # overwritten in main() once the final slide count is known
 
 
 # --------------------------------------------------------------------------- #
@@ -83,6 +89,20 @@ def results_table(rows, table_id):
             f"<td>{fmt(r['mean'])} ± {fmt(r['std'])}</td>"
             f"<td>{fmt(r['min'])}</td><td>{fmt(r['max'])}</td>"
             f"<td>{esc(beats)}</td></tr>"
+        )
+    return (
+        f'<div class="table-scroll"><table id="{table_id}">'
+        f"<thead>{head}</thead><tbody>{''.join(body)}</tbody></table></div>"
+    )
+
+
+def sweep_table(rows, table_id):
+    """``rows`` is a list of (config, greedy_beam, solo_plan, coop_plan)."""
+    head = "<tr><th>Config</th><th>Greedy-Beam</th><th>Solo-Plan</th><th>Coop-Plan</th></tr>"
+    body = []
+    for config, gb, sp, cp in rows:
+        body.append(
+            f"<tr><td>{esc(config)}</td><td>{fmt(gb)}</td><td>{fmt(sp)}</td><td>{fmt(cp)}</td></tr>"
         )
     return (
         f'<div class="table-scroll"><table id="{table_id}">'
@@ -224,20 +244,76 @@ def slide_reward_shaping(number, kicker, items):
     return slide_wrap(number, kicker + ": Reward Shaping", body, kicker=kicker)
 
 
+def slide_viewer_500(number):
+    """One episode of each policy at the same moment, straight from the map viewer."""
+    with open(VIEWER_500_PATH, "rb") as f:
+        data = base64.b64encode(f.read()).decode("ascii")
+    stats = [
+        ("Greedy-Beam", "0.280", "2,564", "14%", "7,310"),
+        ("Solo-Plan", "0.415", "1,772", "14%", "7,275"),
+        ("MAPPO (trained)", "0.605", "439", "67%", "4,463"),
+        ("Coop-Plan", "0.598", "336", "79%", "4,039"),
+    ]
+    rows = "".join(
+        f"<tr><td>{esc(a)}</td><td>{b}</td><td>{c}</td><td>{d}</td><td>{e}</td></tr>"
+        for a, b, c, d, e in stats
+    )
+    body = f"""
+<div style="display:flex; gap:18px; align-items:flex-start;">
+  <img src="data:image/jpeg;base64,{data}" alt="Viewer: four policies at step 120"
+       style="width:66%; border:1px solid #ccd; border-radius:6px;">
+  <div style="flex:1; font-size:0.8em;">
+    <p>Seed 1000, step 120 of 180. Top: Greedy-Beam, Solo-Plan. Bottom: MAPPO, Coop-Plan.
+    Magenta clusters are events open and not yet imaged.</p>
+    <div class="table-scroll"><table id="table-ev500-viewer">
+      <thead><tr><th>Policy</th><th>Return so far</th><th>Event targets missed
+      (of 5,000)</th><th>Mean battery</th><th>Looks</th></tr></thead>
+      <tbody>{rows}</tbody>
+    </table></div>
+    <p>Both independent policies have spent their charge on background targets when
+    events open; the trained policy, like Coop-Plan, takes about 40% fewer looks and keeps
+    the battery for the events.</p>
+  </div>
+</div>"""
+    return slide_wrap(number, "500-Agent: One Episode in the Viewer", body, kicker="500-Agent")
+
+
+def slide_500_gap(number, kicker, title, bullet_items, sweep_rows, table_id):
+    body = bullets(bullet_items)
+    body += (
+        '<p class="legend">Scenario sweep, seed 0, 180 steps '
+        "(config, greedy_beam, solo_plan, coop_plan):</p>"
+    )
+    body += sweep_table(sweep_rows, table_id)
+    return slide_wrap(number, title, body, kicker=kicker)
+
+
 # --------------------------------------------------------------------------- #
 # Main
 # --------------------------------------------------------------------------- #
 
 
 def main():
+    global TOTAL_SLIDES
+
     data = load_results()
     hot_rows = data["hotspots100"]
     ev_rows = data["events200"]
+    ev500_rows = data.get("events500", [])
 
     hot_best = best_rl_row(hot_rows)
     ev_best = best_rl_row(ev_rows)
+    ev500_best = best_rl_row(ev500_rows) if ev500_rows else None
     hot_coop = find_row(hot_rows, "Coop-Plan")
     ev_coop = find_row(ev_rows, "Coop-Plan")
+    ev500_coop = find_row(ev500_rows, "Coop-Plan") if ev500_rows else None
+    ev500_solo = find_row(ev500_rows, "Solo-Plan") if ev500_rows else None
+
+    # slides 1-10 (100-agent + 200-agent) + slide 11 (500-agent summary) + slide 12
+    # (500-agent gap) + slide 13 (500-agent best approach, only once trained) + the
+    # viewer slide (only once trained and the image exists)
+    has_viewer_500 = ev500_best is not None and os.path.exists(VIEWER_500_PATH)
+    TOTAL_SLIDES = 12 + (1 if ev500_best is not None else 0) + (1 if has_viewer_500 else 0)
 
     best100_sentence = (
         f"<strong>{esc(hot_best['label'])}</strong> is the best RL row: mean "
@@ -476,12 +552,124 @@ def main():
         )
     )
 
+    # ---------------- Slide 11: 500-agent summary ----------------
+    one_liner_500 = (
+        "<strong>sarsat-500sat-events</strong>: 500 satellites, 50 Walker planes of 10, "
+        "15,000 persistent background targets + 100 event clusters × 50 targets "
+        "(10× priority, open 10–30 steps), 180 steps, 5% duty cycle."
+    )
+    if ev500_best is not None:
+        verdict_500 = (
+            f"{esc(ev500_best['label'])} reaches mean {fmt(ev500_best['mean'])} over "
+            f"{ev500_best['n']} seeds ({esc(ev500_best['beats_greedy_beam'])} beat "
+            f"Greedy-Beam), {fmt(ev500_coop['mean'] - ev500_best['mean'])} below "
+            f"Coop-Plan's {fmt(ev500_coop['mean'])} and "
+            f"{fmt(ev500_best['mean'] - ev500_solo['mean'])} above Solo-Plan's "
+            f"{fmt(ev500_solo['mean'])}."
+        )
+    else:
+        verdict_500 = "Training in progress; reference policies only."
+    slides.append(
+        slide_summary(
+            11,
+            "500-Agent Windowed Events",
+            "500-Agent Windowed Events: Summary",
+            one_liner_500,
+            ev500_rows,
+            "table-ev500",
+            verdict=verdict_500,
+        )
+    )
+
+    # ---------------- Slide 12: 500-agent gap ----------------
+    bullets_500 = [
+        "On seeds 1000–1015: Greedy-Beam 0.394, Solo-Plan 0.658 (+67%, beats "
+        "Greedy-Beam on 16/16 seeds), Coop-Plan 0.883 (+34% over Solo-Plan, 16/16 seeds)",
+        "Coop-Dedup reaches only 0.432 — same-step deduplication is worth about 10%, so "
+        "almost none of the cooperative gain is satellites sharing a view",
+        "No formation flying: Walker planes only — 25 planes, 50 planes and random "
+        "orbits all give the same three numbers",
+        "Key message: the 5% duty cycle makes rationing pay (opens the Solo-Plan gap); "
+        "keeping 100 clusters with 10–30 step windows keeps cooperation worth a third "
+        "on top — more events or longer windows hand the gain to Solo-Plan",
+    ]
+    sweep_rows_500 = [
+        ("200-sat field, 10% duty", 0.885, 0.886, 0.932),
+        ("scaled field, 10% duty", 0.636, 0.652, 0.889),
+        ("7.5% duty", 0.540, 0.592, 0.876),
+        ("5% duty (chosen), 50 planes of 10", 0.407, 0.684, 0.891),
+        ("5% duty, 200 clusters", 0.456, 0.769, 0.878),
+        ("5% duty, 20–60 step windows", 0.490, 0.841, 0.911),
+    ]
+    slides.append(
+        slide_500_gap(
+            12,
+            "500-Agent",
+            "500-Agent: Why This Benchmark",
+            bullets_500,
+            sweep_rows_500,
+            "table-ev500-sweep",
+        )
+    )
+
+    # ---------------- Slide 13: 500-agent best approach (once trained) ----------------
+    if ev500_best is not None:
+        best500_sentence = (
+            f"<strong>{esc(ev500_best['label'])}</strong> is the best RL row: mean "
+            f"<strong>{fmt(ev500_best['mean'])}</strong> over {ev500_best['n']} seeds "
+            f"({esc(ev500_best['beats_greedy_beam'])} beat Greedy-Beam), "
+            f"{fmt(ev500_coop['mean'] - ev500_best['mean'])} below Coop-Plan's "
+            f"{fmt(ev500_coop['mean'])} and "
+            f"{fmt(ev500_best['mean'] - ev500_solo['mean'])} above Solo-Plan's "
+            f"{fmt(ev500_solo['mean'])}."
+        )
+        slides.append(
+            slide_best_approach(
+                13,
+                "500-Agent",
+                best500_sentence,
+                [
+                    "MAPPO (<code>rec_mappo</code>, MAPX) with shared parameters over 500 agents",
+                    "<code>WindowedCoopSarSat</code> observation, 73 numbers per agent "
+                    "(unchanged from 200 satellites)",
+                    "Slot-mixture anchored head; <code>credit_mix</code> 0.5; ranked contention",
+                    "16 envs × 180-step rollouts on one A40 (Runpod), 4 epochs × 4 minibatches",
+                    "Clip 0.1, gamma 0.995",
+                    "Actor 3e-4 / critic 5e-4, linear LR decay",
+                ],
+                [
+                    "Fast: 0.836 after 30 updates, 0.870 by update 210; stopped at a plateau "
+                    "at update ~660 (best checkpoint: update 600), 2.4 A40-hours, $1.19",
+                    "Beats Solo-Plan on 16/16 seeds by about 0.21: it rations the 5% duty "
+                    "cycle far better than the independent heuristic",
+                    "Trails Coop-Plan on 16/16 seeds by 0.012–0.020: 98% of the centralised "
+                    "planner, the same pattern as at 100 and 200 satellites",
+                ],
+                [
+                    "Not diagnosed: how much of the gain over Solo-Plan is coordination (the "
+                    "observation carries teammate contention and team access counts) and how "
+                    "much is better rationing",
+                    "The 200-satellite limits (same-step duplicates, battery timing at event "
+                    "windows) are likely here too but were not measured",
+                    "One training seed; no pure team-reward or IPPO run at 500 satellites yet "
+                    "(<code>credit_mix</code> 0.5 is reward shaping, disclosed)",
+                ],
+            )
+        )
+
+    if has_viewer_500:
+        slides.append(slide_viewer_500(len(slides) + 1))
+
     html = render_document(slides, hot_rows, ev_rows)
-    with open(OUT_PATH, "w", encoding="utf-8") as f:
+    with open(OUT_PATH, "w", encoding="utf-8", newline="\n") as f:
         f.write(html)
     print(f"Wrote {OUT_PATH} ({len(html):,} bytes, {len(slides)} slides)")
     print(f"Best hotspots100 RL row: {hot_best['label']} mean={hot_best['mean']:.3f}")
     print(f"Best events200 RL row:   {ev_best['label']} mean={ev_best['mean']:.3f}")
+    if ev500_best is not None:
+        print(f"Best events500 RL row:   {ev500_best['label']} mean={ev500_best['mean']:.3f}")
+    else:
+        print("events500: reference policies only (no trained run yet)")
 
 
 # --------------------------------------------------------------------------- #
