@@ -17,28 +17,10 @@ import numpy as np
 
 import sarsat.reference as reference
 from sarsat import SarSat
-from sarsat.reference import ReferenceController
+from sarsat.reference import ReferenceController, lean_precompute
 from sarsat.windows import WindowedSarSat
 
-
-def lean_precompute(env, state):
-    """``reference.precompute`` with int32 / float32 tables: the ``(T, N, M)`` arrays reach
-    16 GB in the default dtypes at 200 satellites x 16,000 targets."""
-    steps = jax.numpy.arange(1, env.time_limit + 1)
-    geometry = jax.jit(jax.vmap(lambda s: env._target_geometry(state, s)[1]))
-    access = np.concatenate(
-        [np.asarray(geometry(steps[i : i + 20])) for i in range(0, len(steps), 20)]
-    )
-    prio = np.asarray(state.target_priority, np.float32)
-    team = np.cumsum(access.sum(1, dtype=np.int32)[::-1], 0, dtype=np.int32)[::-1]
-    own = np.cumsum(access[::-1], 0, dtype=np.int32)[::-1]
-    best_team = np.einsum(
-        "tnm,tm->tnm", access, prio[None] / np.maximum(team, 1).astype(np.float32)
-    ).max(2)
-    best_own = np.where(access, prio[None, None] / np.maximum(own, 1), np.float32(0)).max(2)
-    return dict(access=access, team=team, own=own, best_team=best_team, best_own=best_own)
-
-
+# The default tables reach tens of GB at 200 satellites x 8000 targets (and more at 500).
 reference.precompute = lean_precompute
 
 BASE = dict(max_targets=8000, hotspot_targets=50, hotspot_weight=10.0, time_limit=180)
@@ -46,6 +28,17 @@ BIG = dict(max_targets=16000, hotspots=80)  # 4000 hotspot + 12000 background ta
 # Events over a persistent background: only the hotspot clusters are windowed.
 EV = dict(
     num_satellites=200, planes=20, hotspots=40, window_steps=(10, 30), background_windows=False
+)
+# 500 satellites over a field scaled by the same 2.5x: 100 event clusters over 15,000
+# persistent background targets, 10% duty cycle.
+EV500 = dict(
+    num_satellites=500,
+    planes=25,
+    max_targets=20000,
+    hotspots=100,
+    window_steps=(10, 30),
+    background_windows=False,
+    recharge_rate=0.01,
 )
 CONFIGS = {
     # 100-satellite benchmark, for reference.
@@ -131,6 +124,27 @@ CONFIGS = {
         time_limit=90,
         recharge_rate=0.01,
     ),
+    # 500 satellites (DECISIONS.md issue 26). Walker planes only: no trains or formation
+    # pairs. The 200-satellite event field first, then the field scaled with the
+    # constellation (2.5x the events and background), and the levers on top of that.
+    "ev500_same": EV500 | dict(max_targets=8000, hotspots=40),
+    "ev500": EV500,
+    "ev500_p50": EV500 | dict(planes=50),
+    "ev500_rand": EV500 | dict(planes=0),
+    "ev500_tight5": EV500 | dict(recharge_rate=0.005),
+    "ev500_short": EV500 | dict(window_steps=(5, 15)),
+    "ev500_long": EV500 | dict(window_steps=(20, 60)),
+    "ev500_w30": EV500 | dict(hotspot_weight=30.0),
+    "ev500_hot200": EV500 | dict(hotspots=200),
+    "ev500_big": EV500 | dict(hotspot_targets=100),
+    "ev500_t90": EV500 | dict(time_limit=90),
+    "ev500_t90_tight5": EV500 | dict(time_limit=90, recharge_rate=0.005),
+    # Around the 5% duty cycle, which opens the solo_plan gap.
+    "ev500_tight7": EV500 | dict(recharge_rate=0.0075),
+    "ev500_hot200_tight5": EV500 | dict(hotspots=200, recharge_rate=0.005),
+    "ev500_long_tight5": EV500 | dict(window_steps=(20, 60), recharge_rate=0.005),
+    "ev500_p50_tight5": EV500 | dict(planes=50, recharge_rate=0.005),
+    "ev500_rand_tight5": EV500 | dict(planes=0, recharge_rate=0.005),
 }
 
 
@@ -152,32 +166,37 @@ def run(env: SarSat, state0, policy: str) -> tuple[float, int]:
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     p.add_argument("--configs", nargs="+", default=list(CONFIGS))
-    p.add_argument("--policies", nargs="+", default=["greedy_beam", "coop_plan"])
-    p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--policies", nargs="+", default=["greedy_beam", "solo_plan", "coop_plan"])
+    p.add_argument("--seeds", nargs="+", type=int, default=[0])
     p.add_argument("--out", default=None)
     args = p.parse_args()
 
     for name in args.configs:
         kwargs = BASE | CONFIGS[name]
         env = WindowedSarSat(**kwargs)  # == SarSat unless window_steps is set
-        state, _ = jax.jit(env.reset)(jax.random.PRNGKey(args.seed))
-        results = {}
-        for policy in args.policies:
-            start = time.perf_counter()
-            ret, looks = run(env, state, policy)
-            results[policy] = ret
-            print(
-                f"{name:12s} {policy:11s} return {ret:.3f}  looks {looks:6d}  "
-                f"({time.perf_counter() - start:.0f}s)",
-                flush=True,
-            )
-            if args.out:
-                with open(args.out, "a") as f:
-                    row = dict(config=name, seed=args.seed, policy=policy, ret=ret, looks=looks)
-                    f.write(json.dumps(row | {"kwargs": kwargs}) + "\n")
-        if "coop_plan" in results and "greedy_beam" in results:
-            gap = results["coop_plan"] / results["greedy_beam"] - 1
-            print(f"{name:12s} gap coop_plan / greedy_beam: {gap:+.0%}", flush=True)
+        for seed in args.seeds:
+            state, _ = jax.jit(env.reset)(jax.random.PRNGKey(seed))
+            results = {}
+            for policy in args.policies:
+                start = time.perf_counter()
+                ret, looks = run(env, state, policy)
+                results[policy] = ret
+                print(
+                    f"{name:16s} seed {seed} {policy:11s} return {ret:.3f}  looks {looks:6d}  "
+                    f"({time.perf_counter() - start:.0f}s)",
+                    flush=True,
+                )
+                if args.out:
+                    with open(args.out, "a") as f:
+                        row = dict(config=name, seed=seed, policy=policy, ret=ret, looks=looks)
+                        f.write(json.dumps(row | {"kwargs": kwargs}) + "\n")
+            if "coop_plan" in results and "greedy_beam" in results:
+                gaps = " ".join(
+                    f"{p}: {results['coop_plan'] / results[p] - 1:+.0%}"
+                    for p in ("greedy_beam", "solo_plan")
+                    if p in results
+                )
+                print(f"{name:16s} seed {seed} gap of coop_plan over {gaps}", flush=True)
 
 
 if __name__ == "__main__":

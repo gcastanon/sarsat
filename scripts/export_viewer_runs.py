@@ -77,7 +77,10 @@ from mapx.types import Observation, ObservationGlobalState  # noqa: E402
 SCENARIO_TITLE = {
     "hotspots100": "sarsat-100sat-hotspots",
     "events200": "sarsat-200sat-events",
+    "events500": "sarsat-500sat-events",
 }
+# Only the 100-satellite references use the full-precision planner tables (see above).
+LEAN_SCENARIOS = ("events200", "events500")
 TRAINED_RUNS = {
     "hotspots100": ("mappo_v5", "~/marl/runs/mappo_v5"),
     "events200": ("ev_mappo_e", "~/marl/runs/ev_mappo_e"),
@@ -87,7 +90,7 @@ REFERENCE_POLICIES = ("greedy_beam", "coop_plan")
 
 def build_reference_env(scenario: str):
     """Plain ``SarSat`` for hotspots100 (so ``targets.csv`` carries no window columns),
-    ``WindowedSarSat`` for events200 (whose hotspots are windowed events)."""
+    ``WindowedSarSat`` for events200 / events500 (whose hotspots are windowed events)."""
     kwargs = dict(SCENARIOS[scenario])
     if scenario == "hotspots100":
         return SarSat(time_limit=180, **kwargs)
@@ -212,7 +215,9 @@ def main() -> None:
     rows = []
     if args.run is not None:
         scenario = args.scenario
-        reference.precompute = lean_precompute if scenario == "events200" else _default_precompute
+        reference.precompute = (
+            lean_precompute if scenario in LEAN_SCENARIOS else _default_precompute
+        )
         label = Path(os.path.expanduser(args.run)).name
         print(f"running {scenario} / {label} (loading {args.run}) ...", flush=True)
         policy, trained_env, checkpoint_dir, step = build_trained_policy(args.run, args.system)
@@ -223,8 +228,10 @@ def main() -> None:
         return
 
     for scenario in ("hotspots100", "events200"):
-        # See the module docstring: only events200 needs the lean (memory-saving) tables.
-        reference.precompute = lean_precompute if scenario == "events200" else _default_precompute
+        # See the module docstring: only the event scenarios need the lean tables.
+        reference.precompute = (
+            lean_precompute if scenario in LEAN_SCENARIOS else _default_precompute
+        )
         env = build_reference_env(scenario)
         for policy_name in REFERENCE_POLICIES:
             print(f"running {scenario} / {policy_name} ...", flush=True)

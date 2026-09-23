@@ -54,6 +54,39 @@ def precompute(env, state):
     return dict(access=access, team=team, own=own, best_team=best_team, best_own=best_own)
 
 
+def lean_precompute(env, state, pair_budget: int = 40_000_000):
+    """:func:`precompute` in the smallest dtypes that hold the tables (bool access, byte
+    opportunity counts, float32 values), built one step at a time.
+
+    The default tables are float64 / int64 and reach tens of GB at 200 satellites x 8000
+    targets; these reach 4 GB at 500 satellites x 20,000 targets. The geometry is evaluated
+    in chunks of steps sized so that a chunk holds about ``pair_budget`` satellite-target
+    pairs. Values are the same as the scripts' earlier int32 / float32 tables to the last
+    bit (the counts are exact and the divisions are done in the same precision); against
+    the full-precision tables ``coop_plan`` moves by about 2e-4 at 100 satellites.
+    """
+    n, m, t_max = env.num_agents, env.max_targets, env.time_limit
+    steps = jnp.arange(1, t_max + 1)
+    chunk = max(1, int(pair_budget // (n * m)))
+    geometry = jax.jit(jax.vmap(lambda s: env._target_geometry(state, s)[1]))
+    access = np.concatenate(
+        [np.asarray(geometry(steps[i : i + chunk])) for i in range(0, t_max, chunk)]
+    )  # (T, N, M) bool
+    prio = np.asarray(state.target_priority, np.float32)
+    team = np.cumsum(access.sum(1, dtype=np.int32)[::-1], 0, dtype=np.int32)[::-1]  # (T, M)
+    count = np.uint8 if t_max < 256 else np.uint16
+    own = np.empty(access.shape, count)  # (T, N, M) opportunities left, per satellite
+    best_team = np.empty((t_max, n), np.float32)
+    best_own = np.empty((t_max, n), np.float64)
+    for t in range(t_max - 1, -1, -1):
+        own[t] = access[t] if t == t_max - 1 else own[t + 1] + access[t]
+        team_weight = prio / np.maximum(team[t], 1).astype(np.float32)
+        best_team[t] = (access[t] * team_weight[None]).max(1)
+        own_count = np.maximum(own[t], 1).astype(np.int32)  # float64 division, as before
+        best_own[t] = np.where(access[t], prio[None] / own_count, 0.0).max(1)
+    return dict(access=access, team=team, own=own, best_team=best_team, best_own=best_own)
+
+
 def choose(policy, t, vis, az, el, prio, hw, battery, pre, env):
     """Target index each satellite aims at (-1: no look) under one of the four policies."""
     n_sat, remaining = vis.shape[0], env.time_limit - t

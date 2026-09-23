@@ -72,3 +72,18 @@ def test_windowed_coop_observation() -> None:
     action = jnp.concatenate([view[:, 1:4], view[:, 0:1]], axis=-1)
     state, ts = jax.jit(env.step)(state, action)
     assert ts.observation.agents_view.shape == (env.num_agents, env.obs_dim)
+
+
+def test_lean_precompute_matches_precompute() -> None:
+    """The memory-lean planner tables agree with the full-precision ones: identical access
+    and counts, values equal to float32 round-off."""
+    from sarsat.reference import lean_precompute, precompute
+
+    env = WindowedSarSat(**SMALL, window_steps=(10, 30), background_windows=False)
+    state, _ = jax.jit(env.reset)(jax.random.PRNGKey(3))
+    full, lean = precompute(env, state), lean_precompute(env, state, pair_budget=50_000)
+    assert np.array_equal(full["access"], lean["access"])
+    assert np.array_equal(full["team"], lean["team"]) and np.array_equal(full["own"], lean["own"])
+    assert lean["own"].dtype == np.uint8 and lean["own"].nbytes == full["access"].nbytes
+    np.testing.assert_allclose(full["best_team"], lean["best_team"], rtol=1e-6)
+    np.testing.assert_allclose(full["best_own"], lean["best_own"], rtol=1e-6)

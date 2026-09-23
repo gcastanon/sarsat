@@ -809,3 +809,122 @@ runs that trained ten times longer; a validation-seed selection over saved check
 would be the next improvement to the tooling. For the environment, the honest next levers
 on the windowed benchmark are an explicit conflict-resolution channel (an intent broadcast
 or a turn-taking token) and larger batches on a Linux host without the allocation cap.
+
+## Issue 26 - A 500-satellite scenario with a three-way gap
+
+**Question.** Build a 500-satellite scenario where `greedy_beam`, `solo_plan` and
+`coop_plan` are all clearly separated: temporal planning has to be worth something over
+the greedy rule, and cooperation has to be worth something more on top of it. Formation
+flying (two satellites seconds apart) is excluded: the constellation has to be one that
+could be flown.
+
+**Method.** `scripts/scenario_sweep.py` gained a `ev500_*` family (Walker planes only) and
+now runs `solo_plan` by default, and `sarsat.reference.lean_precompute` replaces the two
+copies of the lean planner tables that lived in the scripts: bool access, byte opportunity
+counts and float32 values, built one step at a time, which brings the `(T, N, M)` tables
+from tens of GB to ~4 GB at 500 satellites x 20,000 targets. It matches the old script
+version to the bit (`tests/test_windows.py`) and every 200-satellite baseline was produced
+with that version. Everything below is seed 0, 180 steps, unless a seed column says
+otherwise; the three-seed rows are seeds 0-2. The evaluations ran on the Windows side in
+a CPU venv while the GPU was busy.
+
+The starting point is the issue-24 recipe scaled by the same 2.5x as the constellation:
+500 satellites, 100 event clusters of 50 targets (10-30 step windows, priority x10) over
+15,000 persistent background targets, 10% duty cycle. `same` is the unscaled 200-satellite
+field; `tight5` / `tight7` are 5% / 7.5% duty cycles (`recharge_rate` 0.005 / 0.0075);
+`p50` and `rand` are 50 planes of 10 and independent random orbits instead of 25 planes
+of 20; `short` / `long` are 5-15 / 20-60 step windows; `hot200` is 200 clusters over
+10,000 background targets; `big` is 100-target clusters; `t90` is a 90-step episode.
+
+**Findings.**
+
+| config | seed | `greedy_beam` | `solo_plan` | `coop_plan` | solo / greedy | coop / solo |
+|---|---|---|---|---|---|---|
+| same (200-satellite field) | 0 | 0.885 | 0.886 | 0.932 | +0% | +5% |
+| scaled, 10% duty | 0 | 0.636 | 0.652 | 0.889 | +2% | +37% |
+| scaled, 7.5% duty | 0 | 0.540 | 0.592 | 0.876 | +10% | +48% |
+| **scaled, 5% duty** | 0 | 0.395 | 0.626 | 0.853 | +59% | +36% |
+| scaled, 5% duty | 1 | 0.385 | 0.613 | 0.837 | +59% | +37% |
+| scaled, 5% duty | 2 | 0.450 | 0.707 | 0.871 | +57% | +23% |
+| **5% duty, 50 planes of 10** | 0 | 0.407 | 0.684 | 0.891 | +68% | +30% |
+| 5% duty, 50 planes of 10 | 1 | 0.393 | 0.663 | 0.871 | +69% | +31% |
+| 5% duty, 50 planes of 10 | 2 | 0.417 | 0.655 | 0.887 | +57% | +35% |
+| 5% duty, random orbits | 0 | 0.432 | 0.692 | 0.900 | +60% | +30% |
+| 5% duty, 200 clusters | 0 | 0.456 | 0.769 | 0.878 | +69% | +14% |
+| 5% duty, 20-60 step windows | 0 | 0.490 | 0.841 | 0.911 | +72% | +8% |
+| 10% duty, 200 clusters | 0 | 0.686 | 0.736 | 0.896 | +7% | +22% |
+| 10% duty, 20-60 step windows | 0 | 0.748 | 0.802 | 0.948 | +7% | +18% |
+| 10% duty, 5-15 step windows | 0 | 0.529 | 0.538 | 0.755 | +2% | +40% |
+| 10% duty, 100-target clusters | 0 | 0.680 | 0.690 | 0.869 | +1% | +26% |
+| 10% duty, 90 steps | 0 | 0.527 | 0.701 | 0.876 | +33% | +25% |
+| 5% duty, 90 steps | 0 | 0.354 | 0.753 | 0.845 | +113% | +12% |
+
+Four things the table says.
+
+*Scaling the field with the constellation keeps the cooperative gap but not the
+temporal one.* 500 satellites on the 200-satellite field saturate (0.89 greedy). On the
+scaled field at the issue-24 duty cycle `coop_plan` is +40% over `greedy_beam`, exactly the
+issue-24 shape, and `solo_plan` still gains nothing: every satellite has more looks than
+high-value opportunities, so rationing is never forced.
+
+*The duty cycle is the lever that opens the solo gap, and it is a threshold.* At 7.5%
+`solo_plan` gains +10%; at 5% it gains +57-69% on every seed. With a full charge worth
+eleven looks and one look regained every twenty steps, a satellite that spends on the
+background is flat when the next event opens, and the far-sighted policy holds its charge
+for what its own future contains. `greedy_beam` drops to ~0.40, comfortably above the
+0.3 that issue 24 rejected as too weak a baseline. A 5% duty cycle is a few minutes of
+imaging per orbit, which is where small SAR satellites actually operate.
+
+*The two gaps trade off against each other.* Anything that makes a satellite's own future
+richer in events (200 clusters, 20-60 step windows, 90-step episodes at 5% duty) lets
+`solo_plan` recover most of the value, and `coop_plan`'s margin over it shrinks to +8-14%.
+Short windows do the opposite: `solo_plan` gains nothing and all of the gap is
+cooperative, as in issue 24. The 10-30 step window at 100 clusters is the balance point,
+with both gaps at +30% or more.
+
+*The constellation shape barely matters.* 25 planes of 20, 50 planes of 10 and 500
+independent random orbits give the same three numbers to within seed noise. The plane
+count only changes how the same coverage is distributed; none of the gain comes from
+satellites sharing a view. No formation flying was tried, by design.
+
+On the paired test seeds 1000-1015 (`scripts/baseline_seeds.py --scenario events500`,
+`runs/baselines/summary_all.md`), all six policies:
+
+| `sarsat-500sat-events`, seeds 1000-1015 | mean | std | min | max |
+|---|---|---|---|---|
+| Random | 0.041 | 0.004 | 0.037 | 0.048 |
+| naive Greedy (observation-based) | 0.217 | 0.013 | 0.200 | 0.252 |
+| `greedy_beam` | 0.394 | 0.024 | 0.362 | 0.445 |
+| `coop_dedup` | 0.432 | 0.026 | 0.396 | 0.485 |
+| `solo_plan` | 0.658 | 0.035 | 0.575 | 0.713 |
+| `coop_plan` | 0.883 | 0.011 | 0.863 | 0.904 |
+
+`solo_plan` beats `greedy_beam` on 16 of 16 seeds (+67% on the means, +51% on the worst
+seed) and `coop_plan` beats `solo_plan` on 16 of 16 (+34%, +26% on the worst seed); the
+whole gap is +124%. `coop_dedup` sits just above `greedy_beam`: same-step deduplication is
+worth 10%, so almost none of the cooperative gain is satellites sharing a view, which is
+what the no-formation-flying requirement asks for. The planner's standard deviation is
+half the greedy rule's: a cooperating team is also the more predictable one.
+
+**Decision.** `sarsat-500sat-events` is the 500-satellite benchmark
+(`mapx_integration/mapx/configs/env/scenario/sarsat-500sat-events.yaml`,
+`events500` in `scripts/baseline_seeds.py`): 50 Walker planes of 10 satellites, the
+same 10 per plane as the other two benchmarks, 15,000 persistent background targets,
+100 event clusters of 50 targets with 10-30 step windows, and `recharge_rate=0.005`
+(5% duty cycle). The 25-plane variant is equivalent and stays in the sweep table. The
+event count and window length are kept from issue 24 rather than raised, because raising
+either hands the gain to `solo_plan`. Nothing changes in the environment classes: the
+scenario is a configuration of `WindowedSarSat` / `WindowedCoopSarSat` as they were.
+
+**Consequences.** `lean_precompute` is now the one lean planner implementation
+(`scripts/scenario_sweep.py`, `scripts/baseline_seeds.py` and `scripts/export_viewer_runs.py`
+import it), the sweep script takes `--seeds` and reports `solo_plan`, and the training
+launcher, evaluator and viewer exporter know the scenario. The cooperative training
+observation at 500 satellites is 73 numbers per agent as before (the slot / horizon layout
+does not grow with the constellation); its slot-0 rule scores 0.408 on seed 0, level with
+`greedy_beam`, as the untrained policy should. No learner has been trained on it: the
+GPU was occupied, and `launch.sh`'s 4 environments at 500 satellites is an estimate of
+what fits under the WSL2 allocation cap, not a measurement. Because a satellite's *own*
+future now matters, a learner needs the cluster look-ahead more than on the 200-satellite
+benchmark, and the same-step duplication that limited issue 25 will be worse with 500
+satellites; both are things to watch in the first run.

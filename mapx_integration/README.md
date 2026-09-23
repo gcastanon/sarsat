@@ -34,11 +34,13 @@ reached the results below; anything after the scenario is a Hydra override.
 |---|---|
 | Action head | slot mixture (`SARSAT_HEAD=mixture`; `anchored` for the older slot-0 head) |
 | Credit assignment | `+env.credit_mix=0.5`: each satellite's own share blended into the team reward |
-| Batch | 32 envs x 180-step rollouts (16 envs at 200 satellites), 4 minibatches, 4 epochs |
+| Batch | 32 envs x 180-step rollouts (16 envs at 200 satellites, 4 at 500), 4 minibatches, 4 epochs |
 | Schedule | 1500 updates, evaluation every 30, learning-rate decay, gamma 0.995 |
 | Checkpoint | the best 32-episode evaluation is kept under `checkpoints/` |
 
-Scenarios: `sarsat-100sat-hotspots`, `sarsat-200sat-events`, `sarsat-100sat-pairs`, and
+Scenarios: `sarsat-100sat-hotspots`, `sarsat-200sat-events`, `sarsat-500sat-events` (500
+satellites, 20,000 targets, DECISIONS.md issue 26; nothing has been trained on it yet and
+its 4-environment batch is a guess at the WSL2 allocation cap), `sarsat-100sat-pairs`, and
 the plain `sarsat-{8sat-100tg,64sat-1000tg,1000sat-1000tg}`. `run.sh` is the same launcher
 without the recipe, for raw overrides. Follow a run with:
 

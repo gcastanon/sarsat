@@ -3,8 +3,9 @@
 For a fixed ``--scenario`` (``hotspots100``: 100 satellites, 8000 max targets, 40 hotspots
 of 50 targets each weighted 10x, 10 planes; ``events200``: the same but 200 satellites, 20
 planes, and the hotspots are 10-30 step windowed events over a persistent background at a
-10% duty cycle -- see ``mapx_integration/mapx/configs/env/scenario/sarsat-*.yaml``), both
-with a 180-step time limit, this runs any of ``--policies`` (``random``, ``greedy``, and the
+10% duty cycle; ``events500``: 500 satellites, 50 planes, 100 events over 15,000 background
+targets at a 5% duty cycle -- see ``mapx_integration/mapx/configs/env/scenario/sarsat-*.yaml``),
+all with a 180-step time limit, this runs any of ``--policies`` (``random``, ``greedy``, and the
 four ``sarsat.reference`` yardsticks ``greedy_beam``, ``solo_plan``, ``coop_dedup``,
 ``coop_plan``) for every seed in ``[--seed-start, --seed-end]`` (inclusive), resetting with
 ``jax.random.PRNGKey(seed)``. One JSON line per (seed, policy) is appended to ``--output``
@@ -18,9 +19,9 @@ The four ``sarsat.reference`` policies act on the pre-step ``State`` via a
 categorical "side" slot a fair coin flip) with sense always requested, from a key folded
 off ``jax.random.PRNGKey(seed)`` per step -- independent of the env-dynamics reset key.
 
-Uses the same lean (int32/float32) ``reference.precompute`` monkeypatch as
-``scripts/scenario_sweep.py``: the default float64 ``(T, N, M)`` tables reach tens of GB at
-200 satellites x 8000 targets, which would OOM a 15 GB host.
+Uses ``sarsat.reference.lean_precompute`` in place of ``reference.precompute``, as
+``scripts/scenario_sweep.py`` does: the default float64 ``(T, N, M)`` tables reach tens of
+GB at 200 satellites x 8000 targets, which would OOM a 15 GB host.
 
 Run: ``python scripts/baseline_seeds.py --scenario hotspots100 --seed-start 1000 \
 --seed-end 1015 --policies greedy_beam solo_plan coop_plan --output runs/baselines/part0.jsonl``
@@ -39,10 +40,10 @@ import numpy as np
 
 import sarsat.reference as reference
 from sarsat.evaluate import greedy_policy
-from sarsat.reference import REFERENCE_POLICIES, ReferenceController
+from sarsat.reference import REFERENCE_POLICIES, ReferenceController, lean_precompute
 from sarsat.windows import WindowedSarSat
 
-ALL_POLICIES = ("random", "greedy") + REFERENCE_POLICIES
+ALL_POLICIES = ("random", "greedy", *REFERENCE_POLICIES)
 
 # task_config kwargs from mapx_integration/mapx/configs/env/scenario/sarsat-*.yaml.
 SCENARIOS = {
@@ -65,27 +66,21 @@ SCENARIOS = {
         background_windows=False,
         recharge_rate=0.01,
     ),
+    "events500": dict(
+        num_satellites=500,
+        max_targets=20000,
+        hotspots=100,
+        hotspot_targets=50,
+        hotspot_weight=10.0,
+        planes=50,
+        window_steps=(10, 30),
+        background_windows=False,
+        recharge_rate=0.005,
+    ),
 }
 
 
-def lean_precompute(env, state):
-    """``reference.precompute`` with int32 / float32 tables: the ``(T, N, M)`` arrays reach
-    tens of GB in the default dtypes at 200 satellites x 8,000 targets."""
-    steps = jnp.arange(1, env.time_limit + 1)
-    geometry = jax.jit(jax.vmap(lambda s: env._target_geometry(state, s)[1]))
-    access = np.concatenate(
-        [np.asarray(geometry(steps[i : i + 20])) for i in range(0, len(steps), 20)]
-    )
-    prio = np.asarray(state.target_priority, np.float32)
-    team = np.cumsum(access.sum(1, dtype=np.int32)[::-1], 0, dtype=np.int32)[::-1]
-    own = np.cumsum(access[::-1], 0, dtype=np.int32)[::-1]
-    best_team = np.einsum(
-        "tnm,tm->tnm", access, prio[None] / np.maximum(team, 1).astype(np.float32)
-    ).max(2)
-    best_own = np.where(access, prio[None, None] / np.maximum(own, 1), np.float32(0)).max(2)
-    return dict(access=access, team=team, own=own, best_team=best_team, best_own=best_own)
-
-
+# The default tables reach tens of GB at 200 satellites x 8,000 targets.
 reference.precompute = lean_precompute
 
 
@@ -141,7 +136,10 @@ def main() -> None:
     p.add_argument("--seed-start", type=int, required=True)
     p.add_argument("--seed-end", type=int, required=True, help="inclusive")
     p.add_argument(
-        "--policies", nargs="+", choices=ALL_POLICIES, default=["greedy_beam", "solo_plan", "coop_plan"]
+        "--policies",
+        nargs="+",
+        choices=ALL_POLICIES,
+        default=["greedy_beam", "solo_plan", "coop_plan"],
     )
     p.add_argument("--output", type=str, required=True)
     args = p.parse_args()

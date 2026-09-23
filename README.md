@@ -45,6 +45,20 @@ The benchmark scenario used below, `sarsat-100sat-hotspots`:
 | Targets | 6000 background + 40 hotspots of 50 targets, hotspot priority x10 |
 | Why it needs cooperation | the battery binds and targets differ in value, so who spends charge on what matters: a planner that knows what teammates will cover beats the best independent policy by ~10% |
 
+Two larger benchmarks build on it with time-windowed *events* (clusters that can only be
+imaged for 10-30 steps, over a persistent background): `sarsat-200sat-events` (200
+satellites, DECISIONS issue 24) and `sarsat-500sat-events` (500 satellites in 50 Walker
+planes, 20,000 targets, 5% duty cycle, issue 26). On the latter, seeds 1000-1015:
+
+| Policy | Return |
+|---|---|
+| `greedy_beam` | 0.39 |
+| `solo_plan` (independent, plans its own future) | 0.66 |
+| `coop_plan` (centralised planner) | 0.88 |
+
+so planning ahead and cooperating are each worth a third or more, on every seed. No
+learner has been trained on it yet.
+
 ## 3. Train
 
 IPPO on the 100-satellite hotspot scenario, from `mapx_integration/`:

@@ -160,7 +160,11 @@ def load_baselines(repo_root: str, scenario: str = "") -> dict:
     candidates = sorted(glob.glob(os.path.join(folder, "*.jsonl")))
     # Rows without a scenario field predate the field and belong to the 100-satellite
     # hotspot benchmark; ``baseline_seeds.py`` names the scenarios ``hotspots100`` etc.
-    aliases = {"sarsat-100sat-hotspots": "hotspots100", "sarsat-200sat-events": "events200"}
+    aliases = {
+        "sarsat-100sat-hotspots": "hotspots100",
+        "sarsat-200sat-events": "events200",
+        "sarsat-500sat-events": "events500",
+    }
     wanted = aliases.get(scenario, scenario)
     baselines: dict[int, dict[str, float]] = {}
     for path in candidates:
