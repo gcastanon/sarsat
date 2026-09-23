@@ -5,11 +5,20 @@ from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 import jax
+import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from sarsat.tasking import extract_events, render_request, score, steps_from_times
+from sarsat.tasking import (
+    Target,
+    extract_events,
+    extract_targets,
+    render_request,
+    score,
+    steps_from_times,
+)
 from sarsat.tasking.geo import Places, destination, distance_km
+from sarsat.tasking.read import read_request, rebuild_state
 from sarsat.tasking.render import (
     decimal_wording,
     dms_wording,
@@ -174,3 +183,100 @@ def test_load_places_names_us_states() -> None:
     names = {places.label(int(i)) for i in idx}
     assert "Omaha, Nebraska" in names and dist[0] < 20.0
     assert places.label(int(idx[list(places.name[idx]).index("Omaha")]), True) == "Omaha, NE"
+
+
+def test_targets_cover_every_slot_with_their_own_window_and_weight() -> None:
+    env = WindowedSarSat(**SMALL, window_steps=(10, 30), background_windows=False)
+    key = jax.random.PRNGKey(5)
+    targets = extract_targets(env, key)
+    events = {e.cluster: e for e in extract_events(env, key)}
+    assert [t.slot for t in targets] == list(range(env.max_targets))
+    for t in targets:
+        if t.cluster < 0:
+            assert (t.first, t.last, t.priority) == (0, env.time_limit, pytest.approx(1.0))
+        else:
+            e = events[t.cluster]
+            assert (t.first, t.last) == (e.first, e.last)
+            assert t.priority == pytest.approx(env.hotspot_weight, rel=1e-4)
+
+
+def _near_places(n: int, seed: int) -> list:
+    """Targets scattered up to 600 km around the fixture places, with random windows."""
+    rng = np.random.default_rng(seed)
+    out = []
+    for k in range(n):
+        i = k % len(PLACES)
+        lat, lon = destination(
+            PLACES.lat[i], PLACES.lon[i], rng.uniform(0, 360), rng.uniform(0, 600) ** 1.5 / 24
+        )
+        first = int(rng.choice([0, 1, int(rng.integers(2, 150))]))
+        last = 180 if first == 0 else first + int(rng.integers(9, 30))
+        out.append(
+            Target(k, -1 if first == 0 else 0, lat, lon, first, last, [1.0, 10.0][first > 0])
+        )
+    return out
+
+
+def test_every_wording_reads_back_to_its_exact_reading() -> None:
+    loc_forms, time_forms = set(), set()
+    targets = _near_places(3000, seed=7)
+    for places in (PLACES, None):
+        for t in targets[: 3000 if places else 600]:
+            rng = np.random.default_rng([7, t.slot])
+            r = render_request(t, ISSUED, rng, places)
+            p = read_request(r["text"], ISSUED, places)
+            loc_forms.add(r["meta"]["loc_form"])
+            time_forms.add(r["meta"]["time_form"])
+            assert (p["lat"], p["lon"]) == pytest.approx(
+                (r["stated"]["lat"], r["stated"]["lon"]), abs=1e-5
+            ), r["text"]
+            assert (p["start_utc"], p["stop_utc"]) == (
+                r["stated"]["start_utc"],
+                r["stated"]["stop_utc"],
+            ), r["text"]
+            assert p["priority"] == pytest.approx(t.priority), r["text"]
+            assert score(p, r)["ok"], r["text"]
+    assert loc_forms >= {"named", "relative_compass", "relative_bearing", "dms_sec", "decimal2"}
+    assert time_forms >= {"relative", "utc", "utc_duration", "local", "within", "until"}
+
+
+def test_ambiguous_place_labels_are_never_used() -> None:
+    two = Places(
+        name=np.array(["Springfield", "Springfield", "Kearney"], dtype=object),
+        region=np.array(["Illinois", "Illinois", "Nebraska"], dtype=object),
+        region_code=np.array(["IL", "IL", "NE"], dtype=object),
+        country_code=np.array(["US", "US", "US"], dtype=object),
+        lat=np.array([39.80, 39.90, 40.70]),
+        lon=np.array([-89.64, -89.60, -99.08]),
+        population=np.array([1e5, 1e5, 3e4]),
+        timezone=np.array(["America/Chicago"] * 3, dtype=object),
+    )
+    assert two.lookup("Springfield", "Illinois") is None
+    assert two.lookup("Kearney", "NE") is not None
+    rng = np.random.default_rng(0)
+    for _ in range(300):
+        lat, lon = destination(39.85, -89.62, rng.uniform(0, 360), rng.uniform(0, 60))
+        t = Target(0, -1, lat, lon, 0, 180, 1.0)
+        assert "Springfield" not in render_request(t, ISSUED, rng, two)["text"]
+
+
+def test_rebuilt_episode_matches_the_original() -> None:
+    env = WindowedSarSat(**SMALL, window_steps=(10, 30), background_windows=False)
+    key = jax.random.PRNGKey(9)
+    records = [
+        render_request(t, ISSUED, np.random.default_rng([9, t.slot]), PLACES)
+        for t in extract_targets(env, key)
+    ]
+    readings = [read_request(r["text"], ISSUED, PLACES) for r in records]
+    original = jax.jit(env.reset)(key)[0]
+    rebuilt = rebuild_state(env, key, readings, ISSUED)
+    km = distance_km(*np.asarray(original.target_latlon, np.float64).T,
+                     *np.asarray(rebuilt.target_latlon, np.float64).T)  # fmt: skip
+    assert (km <= np.array([r["tol"]["km"] for r in records]) + 1e-3).all()
+    window_err = np.abs(np.asarray(original.target_window) - np.asarray(rebuilt.target_window))
+    assert (window_err.max(axis=1) <= np.array([r["tol"]["min"] for r in records])).all()
+    assert np.allclose(original.target_priority, rebuilt.target_priority, rtol=1e-5)
+    assert jnp.array_equal(original.orbit.raan, rebuilt.orbit.raan)
+    action = jnp.zeros(env.action_spec.shape).at[:, -1].set(1.0)
+    _, timestep = jax.jit(env.step)(rebuilt, action)  # the rebuilt state is a valid state
+    assert np.isfinite(np.asarray(timestep.reward)).all()

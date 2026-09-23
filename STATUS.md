@@ -1,6 +1,6 @@
 # Status — read this first in a new chat
 
-_Last updated: 2026-09-23 (issue 28). Keep this file short and current; history lives in git and
+_Last updated: 2026-09-23 (issue 29). Keep this file short and current; history lives in git and
 the reasoning lives in DECISIONS.md._
 
 ## Where things live
@@ -8,7 +8,7 @@ the reasoning lives in DECISIONS.md._
 | What | Where | Notes |
 |---|---|---|
 | Source of truth | this git repository | clone it at the start of a chat, push at the end |
-| Design rationale | `DECISIONS.md` (issues 1-28) | append an issue for any non-obvious choice |
+| Design rationale | `DECISIONS.md` (issues 1-29) | append an issue for any non-obvious choice |
 | Deferred ideas | `IMPROVEMENTS.md` | move an item out when it is built |
 | MAPX integration | `mapx_integration/` | drop-in files for the MAPX repo, see its README |
 | Claude Project knowledge | mirrors of the three docs above + this file | search only; not the source of truth |
@@ -47,8 +47,10 @@ the reasoning lives in DECISIONS.md._
 * `sarsat.tasking` writes a natural-language tasking request for every event of a
   windowed scenario, labelled with the raw numbers (centre, window, priority) plus the
   wording's tolerance; `scripts/make_requests.py` (`pip install -e ".[tasking]"`) wrote
-  `data/requests/events500_seeds1000-1015.jsonl` (1,600 requests). Parser not built yet
-  (DECISIONS issue 28).
+  `data/requests/events500_seeds1000-1015.jsonl` (1,600 requests). `scripts/seed_requests.py`
+  writes every target of one seed (20,000 at `events500`) and rebuilds the episode from the
+  text with a rule-based reader: seed 1000 rebuilt scores `greedy_beam` 0.3650 / `coop_plan`
+  0.8748 vs 0.3652 / 0.8747 original. No free-text (LLM) parser yet (DECISIONS issues 28-29).
 * Results deck: `reports/sarsat_marl_results.html` (built by `scripts/collect_results.py`
   + `scripts/build_deck.py` from `reports/results.json`).
 * `python -m sarsat.evaluate` writes CSV logs and a self-contained HTML map viewer;

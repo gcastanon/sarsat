@@ -60,3 +60,40 @@ def extract_events(env: WindowedSarSat, key: jax.Array) -> List[Event]:
             )
         )
     return events
+
+
+class Target(NamedTuple):
+    slot: int  # target slot in the state
+    cluster: int  # event cluster, or -1 for a background target
+    lat: float
+    lon: float
+    first: int  # first step at which it pays (0 for a target open all episode)
+    last: int  # last step at which it pays (inclusive)
+    priority: float  # weight relative to a background target
+
+
+def extract_targets(env: WindowedSarSat, key: jax.Array) -> List[Target]:
+    """Every active target of the episode ``env.reset(key)`` starts, in slot order: the event
+    members around their centres and the background, each with its own window and weight."""
+    state = jax.jit(env._initial_state)(key)
+    latlon = np.asarray(state.target_latlon, np.float64)
+    window = np.asarray(state.target_window)
+    weight = np.asarray(state.target_priority, np.float64)
+    active = np.asarray(state.target_active)
+    num_hot = env.hotspots * env.hotspot_targets
+    # Relative to a background target, so the number is the scenario's own weight.
+    unit = weight[num_hot] if num_hot < env.max_targets and weight[num_hot] > 0 else None
+    if unit is None:  # no background: event targets carry hotspot_weight
+        unit = weight[0] / env.hotspot_weight
+    return [
+        Target(
+            slot=int(m),
+            cluster=int(m % env.hotspots) if m < num_hot else -1,
+            lat=float(latlon[m, 0]),
+            lon=float(latlon[m, 1]),
+            first=int(window[m, 0]),
+            last=int(window[m, 1]),
+            priority=round(float(weight[m] / unit), 4),
+        )
+        for m in np.flatnonzero(active)
+    ]

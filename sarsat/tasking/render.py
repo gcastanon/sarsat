@@ -19,7 +19,10 @@ Conventions a parser must share (they make every time wording exact):
   step_seconds``; ``start`` is the window's first step and ``stop`` its last, inclusive.
 * A clock time without a date is its next occurrence at or after ``issued``; local times
   are in the time zone of the place the location names.
-* "Within the next N minutes" opens at ``issued``, a minute before step 1 (``tol`` 1 min).
+* "Within the next N minutes" and "any time before / by / until" open at ``issued``: exact
+  for a target open all episode, a minute early for a window opening at step 1.
+* A place is named only by a label (``Kearney, Nebraska``, ``Kearney, NE``) that names one
+  place alone; :func:`sarsat.tasking.read.read_request` reads every wording back.
 * Distances are great-circle on the environment's sphere; a bearing is the initial true
   bearing from the named place; a compass point is the centre of its 22.5 degree sector.
 * Priority is written as one of four tiers (``TIERS``); the label keeps the raw weight.
@@ -27,12 +30,12 @@ Conventions a parser must share (they make every time wording exact):
 
 import math
 from datetime import datetime, timedelta, timezone
-from typing import Dict, List, NamedTuple, Optional, Tuple
+from typing import Dict, List, NamedTuple, Optional, Tuple, Union
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import numpy as np
 
-from sarsat.tasking.events import Event
+from sarsat.tasking.events import Event, Target
 from sarsat.tasking.geo import (
     COMPASS16,
     KM_PER_DEG,
@@ -204,7 +207,7 @@ def relative_wording(
     step = _distance_step(d_km / km)
     dist = round(d_km / km / step) * step
     dist_text = f"{dist:.0f} {UNIT_WORDS[unit][rng.integers(2)]}"
-    place = places.label(i, abbreviate=bool(rng.integers(2)))
+    place = place_label(places, i, rng)
     if style == "compass":
         point = round(theta / 22.5) % 16
         s_theta, half_deg = point * 22.5, 11.25
@@ -223,12 +226,21 @@ def relative_wording(
     return Wording(text, f"relative_{style}", tol, destination(a_lat, a_lon, s_theta, dist * km))
 
 
+def place_label(places: Places, i: int, rng) -> Optional[str]:
+    """A label naming place ``i`` alone (US places sometimes with the state code), or None."""
+    styles = [a for a in (False, True) if places.unique(i, a)]
+    if not styles:
+        return None
+    if len(styles) == 2 and places.country_code[i] == "US":
+        return places.label(i, bool(rng.integers(2)))
+    return places.label(i, styles[0])
+
+
 def named_wording(places: Places, i: int, radius_km: float, rng) -> Wording:
-    """The place itself, for a centre within ``radius_km`` of it."""
-    place = places.label(i, abbreviate=bool(rng.integers(2)))
-    text = (place, f"near {place}", f"the {places.name[i]} area, {places.region[i]}")[
-        rng.choice(3, p=(0.5, 0.3, 0.2))
-    ]
+    """The place itself, for a centre within ``radius_km`` of it (``i`` must be labelled
+    uniquely, see :func:`place_label`)."""
+    place = place_label(places, i, rng)
+    text = (place, f"near {place}", f"the area around {place}")[rng.choice(3, p=(0.5, 0.3, 0.2))]
     return Wording(text, "named", radius_km, (float(places.lat[i]), float(places.lon[i])))
 
 
@@ -251,10 +263,13 @@ def render_location(
     u = rng.random()
     if places is not None and u < 0.5:
         idx, dist = places.nearby(lat, lon, anchor_km)
-        if u < 0.15 and len(idx) and dist[0] <= named_km:
+        if u < 0.15 and len(idx) and dist[0] <= named_km and place_label(places, int(idx[0]), rng):
             i = int(idx[0])
             return named_wording(places, i, named_km, rng), str(places.timezone[i])
-        keep = dist >= 3.0  # "0 km N of" reads as the place itself
+        # "0 km N of" reads as the place itself; an ambiguous label cannot be read back.
+        keep = (dist >= 3.0) & np.array(
+            [places.unique(i) or places.unique(i, True) for i in idx], bool
+        )
         idx = idx[keep][:40]
         if len(idx):
             weight = np.sqrt(places.population[idx]) + 1.0  # some GeoNames entries are 0
@@ -309,6 +324,8 @@ def render_window(
     a, b = round(first * step_seconds / 60), round(last * step_seconds / 60)
     exact = (start, stop)
     forms = ["relative", "relative_duration", "utc", "utc_duration"]
+    if first == 0:  # open from the start: "starting in 0 minutes" reads badly
+        forms = []
     zone = None
     if zone_name is not None:
         try:
@@ -317,7 +334,7 @@ def render_window(
         except (ZoneInfoNotFoundError, ValueError):
             pass
     if first * step_seconds <= 60:
-        forms.append("within")
+        forms += ["within", "until"]
     form = forms[rng.integers(len(forms))]
 
     if form == "relative":
@@ -342,11 +359,17 @@ def render_window(
         abbr = f"{s:%Z}"
         suffix = f" ({abbr})" if abbr.isalpha() and rng.random() < 0.5 else ""
         text = f"between {_clock_local(s)} and {_clock_local(e)} local time{suffix}"
-    else:  # within: opens at issue, a step early
-        text = (f"within the next {_minutes(b, rng)}", f"in the next {_minutes(b, rng)}")[
-            rng.integers(2)
-        ]
-        return Wording(text, form, 1.0, (issued, stop))
+    else:  # within / until: open from the issue time, which may be a step early
+        if form == "within":
+            text = (f"within the next {_minutes(b, rng)}", f"in the next {_minutes(b, rng)}")[
+                rng.integers(2)
+            ]
+        else:
+            clock = _clock_utc(stop, int(rng.integers(3)))
+            text = (f"any time before {clock}", f"by {clock}", f"any time until {clock}")[
+                rng.integers(3)
+            ]
+        return Wording(text, form, a, (issued, stop))
     return Wording(text, form, 0.0, exact)
 
 
@@ -379,14 +402,15 @@ def steps_from_times(
 
 
 def render_request(
-    event: Event,
+    event: Union[Event, Target],
     issued: datetime,
     rng: np.random.Generator,
     places: Optional[Places] = None,
     step_seconds: float = 60.0,
     max_tol_km: float = 25.0,
 ) -> dict:
-    """One JSON-ready request record for ``event``: text, raw label, tolerances, readings."""
+    """One JSON-ready request record for an event or a single target: text, raw label,
+    tolerances, readings."""
     loc, zone = render_location(event.lat, event.lon, rng, places, max_tol_km=max_tol_km)
     win = render_window(event.first, event.last, issued, rng, zone, step_seconds)
     tier = priority_tier(event.priority)
@@ -423,6 +447,7 @@ def render_request(
             "stop_utc": _iso(win.stated[1]),
         },
         "meta": {
+            **({"slot": event.slot} if hasattr(event, "slot") else {}),
             "cluster": event.cluster,
             "loc_form": loc.form,
             "time_form": win.form,

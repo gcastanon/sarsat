@@ -1015,7 +1015,7 @@ per event (`render_request`); `scripts/make_requests.py` writes a JSONL set, and
 On the test seeds the location wordings are 45% relative to a place (39% by bearing,
 5% by compass point), 33% decimal degrees and 21% degrees-minutes(-seconds); a named place
 alone is 1.4%, because it needs a centre within 10 km of a town of 5,000. The median
-location tolerance is 1.3 km and the largest 24.8 km; every priority label is 10.
+location tolerance is 1.3 km and the largest 25.0 km; every priority label is 10.
 
 **Consequences.** The parser (the second half of the request) can be scored on this set
 directly with `sarsat.tasking.score`. The text comes from templates, so it is stiffer than
@@ -1023,3 +1023,50 @@ real requests; an LLM paraphrase pass, kept only when a parse lands within `tol`
 dozen requests typed by people are the next steps (IMPROVEMENTS.md). Feeding parsed
 requests back into an episode needs a reset hook that takes event centres and windows
 instead of drawing them.
+
+## Issue 29 - Every target of a seed as a request, and the episode rebuilt from the text
+
+**Question.** Issue 28 turns the 100 events of an episode into requests. Can a seed's
+whole target field (at `sarsat-500sat-events`, 15,000 background targets and the 5,000
+members of the events) be written as natural language that re-creates the episode?
+
+**Decision.** One request per target, worded within the issue-28 tolerances (user,
+2026-09-23: every target, and the existing tolerances rather than metre-level
+coordinates). `extract_targets` reads every slot with its own point, window and weight;
+background targets are routine requests open all episode ("any time before 08:36Z",
+"in the next 3 h"), event members urgent requests with their event's window.
+`sarsat.tasking.read.read_request` reads a request back from its text and issue time
+alone, and `rebuild_state` puts the readings into the state `env.reset(key)` starts
+(orbits from the key, targets from the text, in slot order). `scripts/seed_requests.py`
+does the three steps for one seed; `data/requests/events500_seed1000_targets.jsonl.gz`
+is seed 1000.
+
+Two wording changes make reading back reliable, and apply to the issue-28 set as well:
+a place is named only by a label that names one place alone (1,551 of GeoNames' 67,595
+labels at population 5,000 are shared, e.g. two places called the same in one state),
+and "the X area, Region" became "the area around X, Region" so the label stays whole.
+Windows open from step 0 get their own wordings ("any time before", "by", "until"),
+exact for them and a minute early for a window opening at step 1.
+
+The reader is rule-based: it covers exactly the generator's wordings. It finds a place
+by the longest known name before ", Region", then the distance / bearing around it;
+otherwise degrees-minutes-seconds or decimal coordinates; then the window and the
+longest priority phrase in what is left. It is the reference an LLM parser would be
+compared with, not a parser of free text.
+
+**Findings.** Seed 1000 (`scripts/seed_requests.py --seed 1000 --policies greedy_beam
+coop_plan`): all 20,000 requests read back within their tolerance; location error median
+0.53 km, 90th percentile 4.8 km, largest 22 km; 99.97% of window steps and every weight
+identical (the rest are event windows opening at step 1 worded "within the next N
+minutes"). Replaying the reference policies on both episodes:
+
+| seed 1000 | original | rebuilt from text |
+|---|---|---|
+| `greedy_beam` | 0.3652 | 0.3650 |
+| `coop_plan` | 0.8747 | 0.8748 |
+
+**Consequences.** Kilometre-level placement does not change what the benchmark measures,
+so a seed's text is a usable substitute for the seed. Writing 20,000 requests takes
+~15 s on CPU and reading them back ~3 s. The plain file is 13 MB per seed (1.5 MB
+gzipped), so only seed 1000 is kept in the repository; the script regenerates any
+other seed byte for byte.

@@ -4,7 +4,7 @@ The Earth is the same sphere the environment uses (``EARTH_RADIUS_KM``), so a di
 computed here is the one the environment would compute.
 """
 
-from typing import NamedTuple, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -44,30 +44,69 @@ def destination(lat: float, lon: float, bearing: float, dist_km: float) -> Tuple
     return float(np.rad2deg(p2)), float((np.rad2deg(l2) + 180.0) % 360.0 - 180.0)
 
 
-class Places(NamedTuple):
-    """Named places as parallel arrays; ``region`` is the US state or the country name."""
+class Places:
+    """Named places as parallel arrays, sorted by latitude; ``region`` is the US state or the
+    country name. A label (``Kearney, Nebraska``, or ``Kearney, NE`` for US places) is used
+    in a request only if it names exactly one place, so reading it back is unambiguous."""
 
-    name: np.ndarray
-    region: np.ndarray
-    region_code: np.ndarray  # US state code (e.g. ``NE``) or ISO country code
-    country_code: np.ndarray
-    lat: np.ndarray
-    lon: np.ndarray
-    population: np.ndarray
-    timezone: np.ndarray  # IANA zone name
+    def __init__(
+        self,
+        name: np.ndarray,
+        region: np.ndarray,
+        region_code: np.ndarray,  # US state code (e.g. ``NE``) or ISO country code
+        country_code: np.ndarray,
+        lat: np.ndarray,
+        lon: np.ndarray,
+        population: np.ndarray,
+        timezone: np.ndarray,  # IANA zone name
+    ) -> None:
+        order = np.argsort(np.asarray(lat, np.float64), kind="stable")
+        self.name = np.asarray(name, dtype=object)[order]
+        self.region = np.array([r.strip() for r in np.asarray(region)[order]], dtype=object)
+        self.region_code = np.asarray(region_code, dtype=object)[order]
+        self.country_code = np.asarray(country_code, dtype=object)[order]
+        self.lat = np.asarray(lat, np.float64)[order]
+        self.lon = np.asarray(lon, np.float64)[order]
+        self.population = np.asarray(population, np.float64)[order]
+        self.timezone = np.asarray(timezone, dtype=object)[order]
+        self._index: Dict[Tuple[str, str], List[int]] = {}
+        for i in range(len(self.name)):
+            for region in {self._region(i, False), self._region(i, True)}:
+                self._index.setdefault((self.name[i], region), []).append(i)
+        # Regions a reader looks for after ", ", longest first ("Korea, North" before "Korea").
+        self.regions = sorted({k[1] for k in self._index}, key=len, reverse=True)
+
+    def __len__(self) -> int:
+        return len(self.name)
+
+    def _region(self, i: int, abbreviate: bool) -> str:
+        us = self.country_code[i] == "US"
+        return self.region_code[i] if abbreviate and us else self.region[i]
 
     def nearby(self, lat: float, lon: float, radius_km: float) -> Tuple[np.ndarray, np.ndarray]:
         """Indices of the places within ``radius_km``, nearest first, and their distances."""
-        d = distance_km(lat, lon, self.lat, self.lon)
+        band = radius_km / KM_PER_DEG
+        lo, hi = np.searchsorted(self.lat, [lat - band, lat + band])
+        d = distance_km(lat, lon, self.lat[lo:hi], self.lon[lo:hi])
         idx = np.flatnonzero(d <= radius_km)
-        order = np.argsort(d[idx])
-        return idx[order], d[idx][order]
+        order = np.argsort(d[idx], kind="stable")
+        return idx[order] + lo, d[idx][order]
 
     def label(self, i: int, abbreviate: bool = False) -> str:
         """``Kearney, Nebraska`` (``Kearney, NE`` abbreviated, US only) or ``Mombasa, Kenya``."""
-        us = self.country_code[i] == "US"
-        region = self.region_code[i] if abbreviate and us else self.region[i]
-        return f"{self.name[i]}, {region}"
+        return f"{self.name[i]}, {self._region(i, abbreviate)}"
+
+    def unique(self, i: int, abbreviate: bool = False) -> bool:
+        """Whether place ``i``'s label names it alone (and can be read back)."""
+        return (
+            "," not in self.name[i]
+            and len(self._index[(self.name[i], self._region(i, abbreviate))]) == 1
+        )
+
+    def lookup(self, name: str, region: str) -> Optional[int]:
+        """The one place labelled ``name, region``, or None."""
+        hits = self._index.get((name, region), [])
+        return hits[0] if len(hits) == 1 else None
 
 
 def load_places(min_population: int = 5000) -> Places:
@@ -88,7 +127,7 @@ def load_places(min_population: int = 5000) -> Places:
             (c["name"], region, code, c["countrycode"], c["latitude"], c["longitude"],
              c["population"], c["timezone"])
         )  # fmt: skip
-    rows.sort(key=lambda r: (r[4], r[5]))  # deterministic order whatever the cache's
+    rows.sort(key=lambda r: (r[4], r[5], r[0]))  # deterministic order whatever the cache's
     cols = list(zip(*rows, strict=True))
     return Places(
         name=np.array(cols[0], dtype=object),

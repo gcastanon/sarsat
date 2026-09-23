@@ -31,3 +31,26 @@ parser must follow (dateless clock times are the next occurrence, local times ar
 named place's zone, bearings are from the place) are in `sarsat/tasking/render.py`.
 
 Place names: GeoNames (CC BY 4.0, <https://www.geonames.org>) via `geonamescache`.
+
+## Every target of one seed
+
+`events500_seed1000_targets.jsonl.gz`: one request per target of seed 1000 (20,000 lines,
+slot order): the 15,000 background targets as routine requests open all episode and the
+5,000 event members with their event's window (DECISIONS.md issue 29). Same fields as
+above, plus `meta.slot`; `meta.cluster` is -1 for a background target.
+
+```
+python scripts/seed_requests.py --scenario events500 --seed 1000 \
+    --output data/requests/events500_seed1000_targets.jsonl.gz --policies greedy_beam
+```
+
+writes the file, reads every text back (`sarsat.tasking.read.read_request`, which sees
+only the text and `issued_utc`), rebuilds the episode from the readings
+(`rebuild_state`), and reports the errors and each policy's return on the original and
+the rebuilt episode (seed 1000: `greedy_beam` 0.3652 / 0.3650, `coop_plan` 0.8747 /
+0.8748). To rebuild an episode from the file yourself:
+
+```python
+readings = [read_request(r["text"], parse_iso(r["issued_utc"]), places) for r in records]
+state = rebuild_state(env, jax.random.PRNGKey(seed), readings, parse_iso(records[0]["issued_utc"]))
+```
