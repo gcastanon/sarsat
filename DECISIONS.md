@@ -975,3 +975,51 @@ learner's 0.21 over `solo_plan` is coordination (its observation carries teammat
 contention and team access counts) and how much is better rationing has not been
 measured; `diagnose_policy.py` or an IPPO run with contention features removed would
 separate the two. One training seed, and no pure team-reward run at this size yet.
+
+## Issue 28 - Natural-language tasking requests written from the raw event numbers
+
+**Question.** People will eventually type requests such as "with high priority, take a
+picture of Omaha, Nebraska in the next 30 minutes", to be turned into latitude, longitude,
+window start / stop and priority. To build and score that parser we need requests whose
+correct answer is known. Should they start from places and phrases, or from the numbers
+the training scenarios already produce?
+
+**Decision.** From the numbers (user, 2026-09-23): the requests are the events of the
+scenario MAPPO trains on, so the language layer and the learner see the same problems.
+`sarsat.tasking` reads every event of an episode (`extract_events`) and writes one request
+per event (`render_request`); `scripts/make_requests.py` writes a JSONL set, and
+`data/requests/events500_seeds1000-1015.jsonl` holds the 1,600 requests of
+`sarsat-500sat-events` on the paired test seeds.
+
+* *One request per event.* An event is a hotspot cluster: centre, shared window, weight.
+  Background targets are not requests. The centre is not in the state, so it is re-drawn
+  with the environment's own keys; the mean of the 50 targets would miss it by ~14 km.
+* *The label is always the raw event.* A random point on land is rarely a named place,
+  so a wording cannot be exact. Each wording records `stated` (what an exact reading gives)
+  and `tol` (a bound on its distance from the label), and a parser is scored against the
+  raw label within `tol`. Tests read the coordinates and clock times back out of the text
+  and check the bounds over random points, the poles and the dateline.
+* *Loose places, exact times.* A 10-30 km location error is well inside an event's 100 km
+  one-sigma spread, so wordings relative to a place are kept while their bound is at most
+  25 km (compass points out to ~100 km, integer bearings much further). A 5-minute error
+  is large on a 10-step window, so every time wording is exact (step `s` is the issue time
+  plus `s` minutes; "within the next N minutes" is the one exception, at 1 minute).
+* *Priority is not varied here.* Every event in the scenario has weight 10; the label is
+  read from the state, relative to a background target, so it follows the scenario if the
+  scenario changes (user: change the scenario, not the generator). The text writes one of
+  four tiers (routine 1, priority 3, immediate 10, flash 30).
+* *Places* come from GeoNames (CC BY 4.0) through the `geonamescache` package, the
+  optional `tasking` extra; GeoNames' own download host is not reachable from every
+  environment, and the package carries the time zones local times need.
+
+On the test seeds the location wordings are 45% relative to a place (39% by bearing,
+5% by compass point), 33% decimal degrees and 21% degrees-minutes(-seconds); a named place
+alone is 1.4%, because it needs a centre within 10 km of a town of 5,000. The median
+location tolerance is 1.3 km and the largest 24.8 km; every priority label is 10.
+
+**Consequences.** The parser (the second half of the request) can be scored on this set
+directly with `sarsat.tasking.score`. The text comes from templates, so it is stiffer than
+real requests; an LLM paraphrase pass, kept only when a parse lands within `tol`, and a few
+dozen requests typed by people are the next steps (IMPROVEMENTS.md). Feeding parsed
+requests back into an episode needs a reset hook that takes event centres and windows
+instead of drawing them.

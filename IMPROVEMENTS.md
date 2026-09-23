@@ -86,3 +86,18 @@ the environment small; each item notes where it would plug in. Issue numbers ref
   function; a helper that loads a MAPX checkpoint and drives its recurrent actor
   (carrying the hidden state) is not included.
 * **Benchmark on accelerators.** Throughput has only been measured on a 2-core CPU.
+
+## Tasking requests (issue 28)
+* **LLM paraphrase pass.** The requests come from templates. Rewriting each in a few
+  personas with Claude, and keeping a rewrite only when parsing it lands within the
+  record's `tol` of the raw label, would make the text less stiff without losing labels.
+* **Requests typed by people.** A few dozen held out as the real test set; template text
+  alone overstates a parser.
+* **The parser itself.** An LLM with structured output that extracts the wording's parts
+  (coordinates as written, or place + distance + bearing, clock times or offsets), with
+  the place lookup and time arithmetic in code, scored with `sarsat.tasking.score`.
+* **Feeding requests back into an episode.** A reset hook that takes event centres and
+  windows instead of drawing them.
+* **More wordings.** MGRS grid references, named natural features (volcanoes, ports,
+  dams), requests with several targets, and invalid requests (no location, a window
+  already past).
