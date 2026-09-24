@@ -1,0 +1,36 @@
+{
+ "_note": "Planner output for the rl-runpod skill (2026-09-24). Merge 'hosts'/'runs'/'plan' into runs/campaign.json on the PC before launching; run ledger.py check first.",
+ "runs": {
+  "ann500_mappo_a": {
+   "status": "queued",
+   "scenario": "sarsat-500sat-announced",
+   "command": "cd /workspace/sarsat/mapx_integration && MAPX_ROOT=/workspace/mapx VENV=/workspace/venv RUNS=/workspace/sarsat/runs XLA_PYTHON_CLIENT_ALLOCATOR=bfc ./launch.sh mappo ann500_mappo_a sarsat-500sat-announced arch.num_envs=16 arch.num_eval_episodes=16",
+   "after": "JAX_PLATFORMS=cuda python eval_checkpoint.py on the best checkpoint, seeds 1000-1015, after training exits; snapshot params + opt_states before teardown"
+  }
+ },
+ "plan": {
+  "updated": "2026-09-24T18:40:00Z",
+  "layout": "one A40 48GB Secure ($0.49/hr; RTX A6000 $0.53 if no A40 stock), single slot, 16 envs, same recipe as ev500_mappo_a; nothing co-schedules (2x35 GB does not fit 48 GB)",
+  "run_types": {
+   "ann500_mappo_a": {
+    "steps_per_sec": [220, 300],
+    "peak_vram_gb": 36,
+    "expected_hours": 3.6,
+    "stall_min": 20,
+    "checks": [
+     {"metric": "eval_return_mean", "rule": "user plateau rule (2026-09-23): after 20 evaluations, stop if max(last 10) <= best(earlier) + 0.005 and mean(last 10) <= mean(previous 10) + 0.003; snapshot the best checkpoint and run the paired-seed eval on the pod", "on_fail": "stop"},
+     {"metric": "train.log", "rule": "no NaN/Inf in loss, value or return; no Traceback", "on_fail": "escalate"},
+     {"metric": "eval_return_mean", "rule": "not more than 0.05 below the run's best for 5 consecutive evaluations", "on_fail": "escalate"},
+     {"metric": "eval_return_mean", "rule": "> 0.50 by evaluation 10 (update 300); greedy_beam scores about 0.46 here", "on_fail": "escalate"},
+     {"metric": "vram_gb", "rule": "< 42", "on_fail": "escalate"},
+     {"metric": "steps_per_sec", "rule": "training env-steps/s within [220, 300] after the first evaluation", "on_fail": "notify"}
+    ]
+   }
+  },
+  "hard_cap_hours": 7,
+  "expected_usd": 1.76,
+  "worst_case_usd": 3.43,
+  "keep_host": "after the paired-seed eval and checkpoint pull: keep only if a follow-up run (seed 2, asymmetric critic, horizon 30) is queued to start within 30 min; otherwise tear down",
+  "replan_when": "plateau rule fires or run reaches 1500 updates; any escalate check; A40 and A6000 both unavailable at launch; host dies; user queues a follow-up"
+ }
+}
