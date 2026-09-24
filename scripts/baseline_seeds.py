@@ -89,6 +89,7 @@ SCENARIOS = {
         planes=50,
         window_steps=(10, 30),
         background_windows=True,
+        background_window_steps=(30, 90),
         recharge_rate=0.005,
         announce_lead_s=1800.0,
     ),

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Launch a training run with the issue-23 recipe:  ./launch.sh <ippo|mappo> <run> <scenario> [overrides]
-#   scenario: sarsat-100sat-hotspots | sarsat-200sat-events | ...
+#   scenario: sarsat-100sat-hotspots | sarsat-200sat-events | sarsat-500sat-events |
+#             sarsat-500sat-announced | ...
 # Defaults: slot-mixture head, credit_mix 0.5, ranked contention, LR decay, 1500 updates,
 # 32 envs (16 at 200 satellites, 4 at 500 for the WSL2 cap; 16 needs ~35 GB). Any hydra override may follow.
 set -euo pipefail
