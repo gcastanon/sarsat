@@ -1022,9 +1022,12 @@ would be nearly invisible, since the look-ahead value is `access x active/50`.
 battery full` recharges at the boundary, as a training reset does) and requests as full
 clusters; keep the training statistics as the default field, with the event rate, window
 range and cluster geometry as server flags. Natural language is parsed offline in three
-optional stages (rules, a small local instruct model under a JSON-schema grammar, a GeoNames
-gazetteer), with the gazetteer picking the place out of the sentence when no model is
-installed.
+optional stages (rules, a GeoNames gazetteer, a small local instruct model under a JSON-schema
+grammar), the gazetteer picking the place out of the sentence and the model only naming a
+place the sentence does not spell out. Priority and deadline come from the rules alone: with
+the model allowed to set them the evaluation fell to 67% (it invents a priority when none is
+stated); rules + gazetteer score 100% on 15 hand-written phrases and 96.7% on 300 synthetic
+ones, the misses all homonyms (`live/nl/evaluate.py`).
 
 **Consequences.** The honest continuous world exposes a training artefact: a fixed-horizon
 policy has no reason to keep charge at the end. Training with a random initial charge (or

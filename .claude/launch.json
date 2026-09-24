@@ -4,7 +4,7 @@
     {
       "name": "sarsat-live",
       "runtimeExecutable": "live\\.venv\\Scripts\\python.exe",
-      "runtimeArgs": ["-m", "live.server", "--port", "8000"],
+      "runtimeArgs": ["-m", "live.server", "--port", "8000", "--gazetteer", "data/geonames", "--model", "models/qwen2.5-1.5b-instruct-q4_k_m.gguf"],
       "port": 8000
     }
   ]

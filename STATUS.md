@@ -85,5 +85,7 @@ the reasoning lives in DECISIONS.md._
 * The trained policy ends episodes at ~8% charge at the 5% duty cycle, so a continuous
   world with battery carry-over loses ~4% per episode against the offline number (issue
   28); a random-initial-charge training would fix it.
-* The NL model path (llama.cpp + GGUF) is written and unit-tested with a fake model, but not
-  yet run with real weights or the real GeoNames dump: both are downloads to approve.
+* NL tasking measured (live/README.md): rules + GeoNames gazetteer 100% on hand-written
+  phrases, 96.7% synthetic (residual: homonyms); the local Qwen2.5-1.5B model is only the
+  fallback for places the sentence does not name. Data and model live in git-ignored
+  `data/geonames/` and `models/`.

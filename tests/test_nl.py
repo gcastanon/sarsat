@@ -142,13 +142,14 @@ def test_pipeline_with_gazetteer_and_model(gaz):
             deadline_minutes=12,
         )
     )
+    # The gazetteer finds Manila in the sentence itself, so the model is not consulted and
+    # the spelled-out offset is not applied (the rules read digits only).
     p = nl.parse("fifty km east of Manila, routine, twelve minutes", geocoder=gaz, model=model)
-    assert (
-        p.source == "gazetteer"
-        and p.lon > 121.0
-        and p.priority == "low"
-        and p.deadline_minutes == 12
-    )
+    assert p.source == "gazetteer" and p.lon == pytest.approx(120.9822) and p.priority == "low"
+    assert p.deadline_minutes == 30  # priority and deadline never come from the model
+    # Asked first, the model names the place and supplies the offset; the gazetteer geocodes.
+    p = nl.parse("fifty km east of Manila, routine", geocoder=gaz, model=model, prefer_model=True)
+    assert p.source == "gazetteer" and p.lon > 121.0 and p.priority == "low"
     model = _FakeModel(
         dict(
             place="Atlantis",

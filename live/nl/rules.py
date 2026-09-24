@@ -56,9 +56,10 @@ _DEADLINE = [
     (re.compile(r"\b(?:within\s+)?(?:a\s+)?quarter\s+(?:of\s+an\s+)?hour\b", re.I), 15),
     (re.compile(r"\b(?:asap|as soon as possible|immediately|right away|right now|now)\b", re.I), 5),
 ]
+# "asap", "now" and "immediately" set the deadline, not the priority.
 _HIGH = re.compile(
     r"\b(high(?:est)?[\s-]*priority|urgent(?:ly)?|critical|top[\s-]*priority|priority\s*(?:1|one|a)|"
-    r"emergency|max(?:imum)?[\s-]*priority|immediate(?:ly)?|asap|as soon as possible)\b",
+    r"emergency|max(?:imum)?[\s-]*priority)\b",
     re.I,
 )
 _LOW = re.compile(
@@ -82,6 +83,11 @@ def parse_coordinates(text: str) -> Optional[Tuple[float, float]]:
         lon = -abs(lon)
     if not (-90 <= lat <= 90 and -180 <= lon <= 180):
         return None
+    # Two bare integers ("priority 1, 8 minute window") are not a position: ask for a
+    # decimal point, a hemisphere letter or the words lat/lon.
+    explicit = "." in m.group(1) or "." in m.group(3) or ns or ew or "lat" in m.group(0).lower()
+    if not explicit:
+        return None
     return lat, lon
 
 
@@ -100,10 +106,10 @@ def parse_deadline(text: str) -> Optional[int]:
 
 def parse_priority(text: str) -> Optional[str]:
     """``high``/``low``/``normal`` if the text says so, else ``None``."""
+    if _LOW.search(text):  # first: "not urgent" and "no rush" contain high words
+        return "low"
     if _HIGH.search(text):
         return "high"
-    if _LOW.search(text):
-        return "low"
     if _NORMAL.search(text):
         return "normal"
     return None

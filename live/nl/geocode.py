@@ -71,6 +71,15 @@ class Place:
     score: float = 1.0
 
 
+def find_offset(text: str) -> Optional[Tuple[float, str]]:
+    """``(km, bearing)`` from "N km <bearing> of ..." in ``text``, or ``None``."""
+    m = _OFFSET.search(text)
+    if not m:
+        return None
+    km = float(m.group(1)) * (1.609344 if m.group(2).lower().startswith("mi") else 1.0)
+    return km, m.group(3).lower()
+
+
 def offset_point(lat: float, lon: float, km: float, bearing: str) -> Tuple[float, float]:
     """Move ``km`` along a great circle in the direction ``bearing`` (a compass word)."""
     theta = math.radians(_BEARINGS[bearing.strip().lower()])
@@ -85,10 +94,11 @@ def offset_point(lat: float, lon: float, km: float, bearing: str) -> Tuple[float
 
 
 class Gazetteer:
-    def __init__(self, directory: str, max_alternates: int = 12) -> None:
+    def __init__(self, directory: str, max_alternates: int = 60) -> None:
         self.directory = directory
         self.places: List[Place] = []
-        self._exact: Dict[str, List[int]] = {}
+        self._exact: Dict[str, List[int]] = {}  # every name and alternate spelling
+        self._primary: Dict[str, List[int]] = {}  # names and ASCII names only
         self._country_names: Dict[str, str] = {}  # folded name -> ISO code
         self._by_country_code: Dict[str, str] = {}  # ISO -> country name
         self._admin1: Dict[str, Tuple[str, str]] = {}  # "CC.ADM1" -> (name, ascii)
@@ -112,12 +122,20 @@ class Gazetteer:
         self._ascii_names = [_fold(p.name) for p in self.places]
 
     # ---------------------------------------------------------------- loading
-    def _add(self, place: Place, names: Iterable[str]) -> None:
+    def _add(self, place: Place, names: Iterable[str], primary: int = 2) -> None:
+        """Index ``place`` under ``names``; the first ``primary`` of them are the place's
+        own names (the rest alternate spellings, which only an explicit lookup may use)."""
         idx = len(self.places)
         self.places.append(place)
-        for n in {_fold(x) for x in names if x}:
-            if n:
-                self._exact.setdefault(n, []).append(idx)
+        seen = set()
+        for i, raw in enumerate(names):
+            n = _fold(raw) if raw else ""
+            if not n or n in seen:
+                continue
+            seen.add(n)
+            self._exact.setdefault(n, []).append(idx)
+            if i < primary:
+                self._primary.setdefault(n, []).append(idx)
 
     def _load_countries(self, path: str) -> None:
         with open(path, encoding="utf-8") as f:
@@ -208,16 +226,24 @@ class Gazetteer:
             key = _fold(_squeeze(candidate))
             if key in self._exact:
                 return self._pick(self._exact[key], country, 1.0)
+        # "Port of Rotterdam, the Netherlands": the longest exact name inside the phrase.
+        hit = self._exact_ngrams(_fold(q).split(), country)
+        if hit is not None:
+            return hit
         cleaned = _fold(_squeeze(_FILLER.sub(" ", q))) or _fold(q)
+        return self._fuzzy(cleaned, country, fuzzy_cutoff)
+
+    def _fuzzy(self, cleaned: str, country: Optional[str], cutoff: int) -> Optional[Place]:
+        """A spelling-tolerant match on the whole of ``cleaned`` ("Rotterdamm"). The
+        character ratio, not a partial-token score: "biggest dutch port" must not become
+        some city that shares a few letters."""
         if not cleaned:
             return None
         try:
             from rapidfuzz import fuzz, process
         except ImportError:  # pragma: no cover - rapidfuzz is a declared dependency
             return None
-        hit = process.extractOne(
-            cleaned, self._ascii_names, scorer=fuzz.WRatio, score_cutoff=fuzzy_cutoff
-        )
+        hit = process.extractOne(cleaned, self._ascii_names, scorer=fuzz.ratio, score_cutoff=cutoff)
         if hit is None:
             return None
         _, score, idx = hit
@@ -225,28 +251,50 @@ class Gazetteer:
         same = self._exact.get(self._ascii_names[idx], [idx])
         return self._pick(same, country, score / 100.0)
 
+    def _exact_ngrams(self, words: List[str], country: Optional[str] = None) -> Optional[Place]:
+        """The longest exact place name among the word n-grams, cities first. Single words
+        match a place's own name, or an alternate spelling only when long enough not to be
+        an everyday word ("Seville" yes; "No", an alternate name of Ho, Ghana, no)."""
+        # A city beats a country or region however long its name ("Port of Rotterdam, the
+        # Netherlands" is Rotterdam); among cities the longer name wins ("Santo Domingo de
+        # los Colorados" over "Santo Domingo"), then the more populous.
+        best: Optional[Tuple[Tuple[bool, int, int], Place]] = None
+        for n in range(min(6, len(words)), 0, -1):
+            for i in range(len(words) - n + 1):
+                key = " ".join(words[i : i + n])
+                if n == 1 and (len(key) < 3 or _FILLER.fullmatch(key)):
+                    continue
+                index = self._exact if n > 1 or len(key) >= 5 else self._primary
+                hits = index.get(key)
+                if hits is None and n == 1:
+                    hits = self._primary.get(key)
+                if hits:
+                    cand = self._pick(hits, country, 1.0)
+                    if cand is None:
+                        continue
+                    rank = (cand.kind == "city", n, cand.population)
+                    if best is None or rank > best[0]:
+                        best = (rank, cand)
+        return best[1] if best else None
+
     def find_in_text(self, text: str) -> Tuple[Optional[Place], Optional[Tuple[float, str]]]:
         """The place a whole request sentence refers to, and any ``(km, bearing)`` offset.
 
-        Longest exact n-gram first (so "San Jose" beats "Jose"), then a fuzzy match on what
-        is left once filler words are removed.
+        Longest exact n-gram first (so "San Jose" beats "Jose", and "Perth, Australia" is
+        Perth because a city beats a country). If nothing matches exactly, a spelling-
+        tolerant match is tried only when at most three non-filler words remain
+        ("Rotterdamm"); a sentence like "the biggest Dutch port" returns nothing, leaving it
+        to the language model.
         """
-        offset = None
+        offset = find_offset(text)
         m = _OFFSET.search(text)
         if m:
-            km = float(m.group(1)) * (1.609344 if m.group(2).lower().startswith("mi") else 1.0)
-            offset = (km, m.group(3).lower())
             text = text[m.end() :]
         text = re.sub(r"[-+]?\d+(?:\.\d+)?", " ", text)  # numbers are never place names
-        words = _fold(text).split()
-        best: Optional[Place] = None
-        for n in range(min(4, len(words)), 0, -1):
-            for i in range(len(words) - n + 1):
-                key = " ".join(words[i : i + n])
-                if key in self._exact and not (n == 1 and _FILLER.fullmatch(key)):
-                    cand = self._pick(self._exact[key], None, 1.0)
-                    if cand and (best is None or cand.population > best.population):
-                        best = cand
-            if best is not None:
-                return best, offset
-        return self.lookup(text), offset
+        hit = self._exact_ngrams(_fold(text).split())
+        if hit is not None:
+            return hit, offset
+        residue = _fold(_squeeze(_FILLER.sub(" ", text)))
+        if 0 < len(residue.split()) <= 3:
+            return self._fuzzy(residue, None, 86), offset
+        return None, offset

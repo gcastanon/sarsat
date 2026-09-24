@@ -55,9 +55,12 @@ uv pip install --python live/.venv/Scripts/python.exe --no-deps -e <path to the 
 * **`live/ui/index.html`** is the map viewer from `sarsat/viewer.html` made live, plus the
   request box, a ledger and a stats strip. Clicking the map fills in coordinates.
 * **`live/nl/`** parses requests in three optional stages: rules (coordinates, priority
-  words, deadlines), a small local instruct model under a JSON-schema grammar
-  (llama.cpp) that names the place, and an offline GeoNames gazetteer that geocodes it.
-  Without the model, the gazetteer picks the place out of the sentence itself.
+  words, deadlines: these two fields come from the rules alone), an offline GeoNames
+  gazetteer that picks the place out of the sentence (longest exact name, cities before
+  countries, a strict spelling-tolerant match only on a short residue), and a small local
+  instruct model under a JSON-schema grammar (llama.cpp) as the fallback that names a place
+  the sentence does not spell out ("the biggest Dutch port" -> Rotterdam). The model's own
+  coordinates are used only when the gazetteer cannot geocode its answer, and are flagged.
 
 ## Natural language: data and model (optional, both local)
 
@@ -69,9 +72,20 @@ uv pip install --python live/.venv/Scripts/python.exe --no-deps -e <path to the 
   `llama-cpp-python` (`uv pip install --python live/.venv/Scripts/python.exe llama-cpp-python
   --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu`) and pass
   `--model models/<file>.gguf`.
-* **Evaluate:** `python -m live.nl.evaluate --gazetteer data/geonames [--model ...]` scores
-  a synthetic set (templates x gazetteer cities) and hand-written phrases: location within
-  50 km, priority and deadline exact. Fine-tune only if that falls short of 95%.
+* **Evaluate:** `python -m live.nl.evaluate --gazetteer data/geonames [--model ...]
+  [--model-first]` scores a synthetic set (templates x gazetteer cities, 15% with "N km
+  east of" offsets) and 15 hand-written phrases: location within 50 km, priority and
+  deadline exact. Measured 2026-09-24 (GeoNames cities15000, Qwen2.5-1.5B-Instruct Q4_K_M):
+
+  | path | hand-written (15) | synthetic (n) |
+  |---|---|---|
+  | rules + gazetteer (the default) | 100% | 96.7% (300); every miss is a homonym, e.g. Birmingham UK vs Alabama |
+  | model first, then gazetteer (`--model-first`) | 100% | 95% (100), 2.2 s per request on 8 CPU threads |
+
+  A first version that let the model set priority and deadline scored 67%: it invents a
+  priority when none is stated and drops offsets. Hence rules own those fields and the
+  model only names places. No fine-tuning was needed at this accuracy; `live/nl/llm.py`
+  takes any GGUF if a larger model is wanted.
 
 ## Soak results (2026-09-24, `python -m live.soak --episodes 3 --requests 10`)
 

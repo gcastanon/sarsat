@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import math
 import random
+import sys
 import time
 from typing import Dict, List, Optional, Tuple
 
@@ -64,7 +65,7 @@ HANDWRITTEN: List[Tuple[str, Dict]] = [
     ("Anchorage within 2 hours", dict(place="Anchorage", priority="normal", deadline=30)),
     ("emergency imaging of Manila within the next 8 minutes", dict(place="Manila", priority="high", deadline=8)),
     ("we'd like Seville (Spain) imaged, standard priority, 30 min", dict(place="Sevilla", priority="normal", deadline=30)),
-    ("São Paulo now", dict(place="Sao Paulo", priority="high", deadline=5)),
+    ("São Paulo now", dict(place="Sao Paulo", priority="normal", deadline=5)),
 ]  # fmt: skip
 
 
@@ -125,14 +126,18 @@ def resolve_expected(
 
 
 def run(
-    cases: List[Tuple[str, Dict]], gaz: Optional[Gazetteer], model, verbose: bool = True
+    cases: List[Tuple[str, Dict]],
+    gaz: Optional[Gazetteer],
+    model,
+    verbose: bool = True,
+    prefer_model: bool = False,
 ) -> Dict[str, float]:
     ok = {"location": 0, "priority": 0, "deadline": 0, "all": 0}
     by_source: Dict[str, List[int]] = {}
     failures = []
     t0 = time.time()
     for text, exp in cases:
-        p = parse(text, geocoder=gaz, model=model)
+        p = parse(text, geocoder=gaz, model=model, prefer_model=prefer_model)
         lat, lon = resolve_expected(gaz, exp)
         loc = p.located and lat is not None and haversine_km(p.lat, p.lon, lat, lon) <= 50
         pri = p.priority == exp["priority"]
@@ -161,12 +166,19 @@ def run(
 
 
 def main() -> None:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # Windows consoles
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--gazetteer", required=True)
     ap.add_argument("--model")
     ap.add_argument("--n", type=int, default=200)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--threads", type=int)
+    ap.add_argument(
+        "--model-first",
+        action="store_true",
+        help="ask the model before the sentence search, to measure the fallback path",
+    )
     args = ap.parse_args()
     gaz = Gazetteer(args.gazetteer)
     model = None
@@ -175,9 +187,9 @@ def main() -> None:
 
         model = LocalModel(args.model, n_threads=args.threads)
     print("hand-written:")
-    run(HANDWRITTEN, gaz, model)
+    run(HANDWRITTEN, gaz, model, prefer_model=args.model_first)
     print("synthetic:")
-    run(synthetic(gaz, args.n, args.seed), gaz, model)
+    run(synthetic(gaz, args.n, args.seed), gaz, model, prefer_model=args.model_first)
 
 
 if __name__ == "__main__":
