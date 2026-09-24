@@ -795,6 +795,9 @@ python scripts/collect_results.py &amp;&amp; python scripts/build_deck.py</code>
 <p><a data-src="sarsat/evaluate.py:131"><code>run_episode(env, policy, seed)</code></a> accepts three kinds of policy: the name of a reference policy, a pure function <code>Observation → action</code> (which it jits), or a stateful object with <code>reset()</code> and <code>__call__</code>, such as a recurrent actor. It returns an <code>EpisodeLog</code>. To try the viewer, open <a data-src="sarsat/viewer.html">sarsat/viewer.html</a> and drop in the CSVs from any folder in <a data-src="examples/README.md">examples/</a>.</p>
 
 <!-- =============================================================== 9 -->
+<h3 id="live">Running the actor live</h3>
+<p><a data-src="live/README.md">live/</a> runs the trained 500-satellite actor continuously at 60x real time in a browser (<code>python -m live.server</code>), with typed tasking requests parsed offline. <a data-src="sarsat/live.py"><code>sarsat.live.LiveWorld</code></a> turns the episodic environment into <em>rolling episodes</em>: every 180 steps the world (orbits re-based, batteries carried over, background respawned, fresh events) is re-packed into a fresh state and the actor's GRU carry is reset, so the policy always sees its training distribution. A request takes over a closed event cluster as 50 co-located slots with a window of at most 30 steps. <a data-src="live/policy.py">live/policy.py</a> loads the actor from the msgpack snapshot without hydra or orbax; <a data-src="live/nl/__init__.py">live/nl/</a> holds the rules, local-model and gazetteer stages of the parser. DECISIONS issue 28.</p>
+
 <h2 id="tests">9. Tests and conventions</h2>
 <div class="snip"><pre><code class="lang-sh">pip install -e ".[dev]"
 pytest -q                              # tests/: env, coop, windows, evaluate
