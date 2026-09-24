@@ -9,6 +9,7 @@ the reasoning lives in DECISIONS.md._
 |---|---|---|
 | Source of truth | this git repository | clone it at the start of a chat, push at the end |
 | Design rationale | `DECISIONS.md` (issues 1-27) | append an issue for any non-obvious choice |
+| Codebase guide | `docs/index.html` | code map, data flow, experiment / training / evaluation walkthrough; update it when those change |
 | Deferred ideas | `IMPROVEMENTS.md` | move an item out when it is built |
 | MAPX integration | `mapx_integration/` | drop-in files for the MAPX repo, see its README |
 | Claude Project knowledge | mirrors of the three docs above + this file | search only; not the source of truth |

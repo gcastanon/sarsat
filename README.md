@@ -113,6 +113,9 @@ the four CSVs of any folder in [examples/](examples/README.md) onto `sarsat/view
 
 ## 5. Design notes
 
+* [docs/index.html](docs/index.html): the codebase guide -- code map, core data structures and
+  how experiments, training and evaluation work, with diagrams and links into the source.
+  Open it in a browser from a checkout.
 * [DECISIONS.md](DECISIONS.md): every non-obvious choice, issue by issue, with measurements.
 * [IMPROVEMENTS.md](IMPROVEMENTS.md): what was deliberately left out.
 * [mapx_integration/README.md](mapx_integration/README.md): the training recipe, all its
