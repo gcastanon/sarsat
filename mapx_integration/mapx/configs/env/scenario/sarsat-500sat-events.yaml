@@ -5,8 +5,9 @@
 # cycle: with a full charge worth only 11 looks and one look regained every 20 steps, a
 # satellite that spends on the background is not charged when the event only it can reach
 # in time opens, and which event that is depends on what its teammates will cover. Seeds
-# 1000-1015: greedy_beam 0.394, solo_plan 0.658 (temporal planning, +67%), coop_plan 0.883
-# (cooperation on top, +34%), each ahead on all 16 seeds: DECISIONS.md issue 26.
+# 1000-1015: greedy_beam 0.394, coop_dedup 0.432 (same-step cooperation alone, +10%),
+# solo_plan 0.658 (temporal planning, +67%), coop_plan 0.883 (cooperation on top, +34%),
+# each ahead on all 16 seeds: DECISIONS.md issue 26.
 name: SarSat
 task_name: sarsat-500sat-events
 task_config:

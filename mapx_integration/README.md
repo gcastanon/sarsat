@@ -66,8 +66,8 @@ JAX_PLATFORMS=cpu python diagnose_policy.py --run-dir ~/marl/runs/ippo_v1 --syst
 ```
 
 `eval_runs.sh` replays the best checkpoint greedily on seeds 1000-1015 (`SEED_START`,
-`SEED_END`, `SEED_TAG` change the set) and prints a per-seed table against `greedy_beam` /
-`coop_plan`, seeded identically so the numbers are directly comparable. The export writes
+`SEED_END`, `SEED_TAG` change the set) and prints a per-seed table against `greedy_beam`,
+`solo_plan`, `coop_dedup` and `coop_plan`, seeded identically so the numbers are directly comparable. The export writes
 the four CSVs and `episode.html` for the map viewer into `runs/viewer/`. `diagnose_policy.py`
 says where a policy loses value against `coop_plan`: hotspot vs background coverage,
 battery timing, same-step duplicates. All three run on the CPU, so they are safe beside a

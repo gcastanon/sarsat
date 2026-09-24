@@ -225,23 +225,18 @@ def main() -> None:
     scenario = str(cfg.env.scenario.get("task_name", ""))
     baselines = load_baselines(os.path.dirname(_here), scenario)
 
+    # The four references span (temporal planning, cooperation): greedy_beam neither,
+    # solo_plan planning only, coop_dedup same-step cooperation only, coop_plan both.
+    references = ("greedy_beam", "solo_plan", "coop_dedup", "coop_plan")
+
     results = []
     for seed in seeds:
         ret = float(episode_fn(actor_params, seed))
         base = baselines.get(seed, {})
-        results.append(
-            {
-                "seed": seed,
-                "policy_return": ret,
-                "greedy_beam": base.get("greedy_beam"),
-                "coop_plan": base.get("coop_plan"),
-                "solo_plan": base.get("solo_plan"),
-            }
-        )
+        results.append({"seed": seed, "policy_return": ret, **{k: base.get(k) for k in references}})
 
-    header = (
-        f"{'seed':>6} {'policy':>10} {'greedy_beam':>12} {'coop_plan':>10} {'beats_greedy':>13}"
-    )
+    header = f"{'seed':>6} {'policy':>10} " + " ".join(f"{k:>12}" for k in references)
+    header += f" {'beats_greedy':>13}"
     print(header)
     print("-" * len(header))
     beats_greedy = 0
@@ -254,22 +249,19 @@ def main() -> None:
             won = r["policy_return"] > gb
             beats_greedy += int(won)
             beat = "yes" if won else "no"
-        gb_str = f"{gb:.4f}" if gb is not None else "n/a"
-        cp_str = f"{r['coop_plan']:.4f}" if r["coop_plan"] is not None else "n/a"
-        print(f"{r['seed']:>6} {r['policy_return']:>10.4f} {gb_str:>12} {cp_str:>10} {beat:>13}")
+        refs = " ".join(f"{'n/a' if r[k] is None else f'{r[k]:.4f}':>12}" for k in references)
+        print(f"{r['seed']:>6} {r['policy_return']:>10.4f} {refs} {beat:>13}")
 
     def mean(key):
         vals = [r[key] for r in results if r[key] is not None]
         return sum(vals) / len(vals) if vals else None
 
     mean_policy = mean("policy_return")
-    mean_gb = mean("greedy_beam")
-    mean_cp = mean("coop_plan")
+    ref_means = {k: mean(k) for k in references}
     print("-" * len(header))
     print(
         f"means: policy={mean_policy:.4f} "
-        f"greedy_beam={'n/a' if mean_gb is None else f'{mean_gb:.4f}'} "
-        f"coop_plan={'n/a' if mean_cp is None else f'{mean_cp:.4f}'}"
+        + " ".join(f"{k}={'n/a' if v is None else f'{v:.4f}'}" for k, v in ref_means.items())
     )
     print(f"policy beats greedy_beam on {beats_greedy}/{n_with_greedy} seeds")
 
@@ -285,8 +277,7 @@ def main() -> None:
             "results": results,
             "summary": {
                 "mean_policy_return": mean_policy,
-                "mean_greedy_beam": mean_gb,
-                "mean_coop_plan": mean_cp,
+                **{f"mean_{k}": v for k, v in ref_means.items()},
                 "policy_beats_greedy_count": beats_greedy,
                 "policy_beats_greedy_total": n_with_greedy,
             },

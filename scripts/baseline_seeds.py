@@ -24,7 +24,8 @@ Uses ``sarsat.reference.lean_precompute`` in place of ``reference.precompute``, 
 GB at 200 satellites x 8000 targets, which would OOM a 15 GB host.
 
 Run: ``python scripts/baseline_seeds.py --scenario hotspots100 --seed-start 1000 \
---seed-end 1015 --policies greedy_beam solo_plan coop_plan --output runs/baselines/part0.jsonl``
+--seed-end 1015 --output runs/baselines/part0.jsonl`` (default ``--policies``: the four
+reference yardsticks)
 """
 
 from __future__ import annotations
@@ -139,7 +140,7 @@ def main() -> None:
         "--policies",
         nargs="+",
         choices=ALL_POLICIES,
-        default=["greedy_beam", "solo_plan", "coop_plan"],
+        default=["greedy_beam", "solo_plan", "coop_dedup", "coop_plan"],
     )
     p.add_argument("--output", type=str, required=True)
     args = p.parse_args()

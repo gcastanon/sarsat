@@ -4,7 +4,8 @@
 # The background tempts a greedy satellite to spend charge it will need for the event only
 # it can reach in time. Over three seeds greedy_beam scores 0.43-0.50, solo_plan the same
 # (temporal planning alone recovers nothing) and coop_plan 0.67-0.75: +49-56%, all of it
-# cooperative (DECISIONS.md issue 24).
+# cooperative (DECISIONS.md issue 24). Seeds 1000-1015: greedy_beam 0.440, solo_plan 0.450,
+# coop_dedup 0.453 (same-step cooperation alone recovers almost nothing either), coop_plan 0.670.
 name: SarSat
 task_name: sarsat-200sat-events
 task_config:
