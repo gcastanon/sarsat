@@ -1,6 +1,6 @@
 # Status — read this first in a new chat
 
-_Last updated: 2026-09-23 (issue 27). Keep this file short and current; history lives in git and
+_Last updated: 2026-09-24 (issue 28). Keep this file short and current; history lives in git and
 the reasoning lives in DECISIONS.md._
 
 ## Where things live
@@ -8,10 +8,11 @@ the reasoning lives in DECISIONS.md._
 | What | Where | Notes |
 |---|---|---|
 | Source of truth | this git repository | clone it at the start of a chat, push at the end |
-| Design rationale | `DECISIONS.md` (issues 1-27) | append an issue for any non-obvious choice |
+| Design rationale | `DECISIONS.md` (issues 1-28) | append an issue for any non-obvious choice |
 | Codebase guide | `docs/index.html` | code map, data flow, experiment / training / evaluation walkthrough; update it when those change |
 | Deferred ideas | `IMPROVEMENTS.md` | move an item out when it is built |
 | MAPX integration | `mapx_integration/` | drop-in files for the MAPX repo, see its README |
+| Live demo | `live/` + `sarsat/live.py` | rolling episodes, web UI, offline NL tasking; see `live/README.md` |
 | Claude Project knowledge | mirrors of the three docs above + this file | search only; not the source of truth |
 
 ## Current state
@@ -35,16 +36,25 @@ the reasoning lives in DECISIONS.md._
   0.898 with the slot-mixture head (`SARSAT_HEAD=mixture`). DECISIONS issue 23.
 * `sarsat.windows` adds time-windowed targets on top of the existing classes; the
   `sarsat-200sat-events` scenario (events over a persistent background, 10% duty cycle)
-  gives coop_plan +49-56% over greedy_beam with solo_plan gaining nothing (DECISIONS
-  issue 24). Learners reach 0.649 vs coop_plan 0.670 and greedy_beam 0.440 (issue 25).
+  gives coop_plan +49-56% over greedy_beam with solo_plan and coop_dedup gaining next
+  to nothing (seeds 1000-1015: 0.440 / 0.450 / 0.453 / 0.670; DECISIONS issue 24). Learners reach 0.649 vs coop_plan 0.670 and greedy_beam 0.440 (issue 25).
 * `sarsat-500sat-events` (issue 26): 500 satellites in 50 Walker planes, 100 event
   clusters over 15,000 background targets, 5% duty cycle. Seeds 1000-1015: `greedy_beam`
-  0.394, `solo_plan` 0.658, `coop_plan` 0.883, each ahead on 16/16 seeds -- the first
-  benchmark where temporal planning *and* cooperation both pay. MAPPO (`ev500_mappo_a`,
+  0.394, `coop_dedup` 0.432, `solo_plan` 0.658, `coop_plan` 0.883, each ahead on 16/16
+  seeds -- the first benchmark where temporal planning *and* cooperation both pay.
+  Cooperation without planning (`coop_dedup`) buys only +10%; they compound. MAPPO (`ev500_mappo_a`,
   16 envs on a Runpod A40, 2.4 h, $1.19) reaches 0.868, 98% of `coop_plan`, beating both
   independent references on 16/16 seeds (issue 27). Runpod workflow: `CLAUDE.md`. Reference-policy evaluation at
   this size uses `sarsat.reference.lean_precompute` (~4 GB) and ran in a Windows-side
   CPU venv (`.venv`, git-ignored) while the GPU was busy.
+* Live demo (issue 28): `sarsat.live.LiveWorld` runs the episodic env as rolling episodes
+  (orbits re-based, batteries carried, background respawned, fresh events) so the trained
+  actor runs forever; `live/server.py` streams it to `live/ui/index.html` at 60x real time
+  (83 ms per 500-satellite step on the Windows CPU); typed requests become 50-slot clusters
+  with a <= 30-step window (30/30 collected in the soak); `live/nl/` parses them offline
+  (rules + optional local GGUF model + GeoNames gazetteer; data and model are downloads,
+  not in the repo). Runs in a Windows Python 3.12 venv (`live/.venv`, git-ignored) that
+  holds CPU JAX, flax and a copy of MAPX.
 * Results deck: `reports/sarsat_marl_results.html` (built by `scripts/collect_results.py`
   + `scripts/build_deck.py` from `reports/results.json`).
 * `python -m sarsat.evaluate` writes CSV logs and a self-contained HTML map viewer;
@@ -72,3 +82,8 @@ the reasoning lives in DECISIONS.md._
   in `step` if wanted.
 * MAPX proper (Python >= 3.12, JAX >= 0.11) has not been run against the wrapper; only
   a faithful stub of its common wrappers has.
+* The trained policy ends episodes at ~8% charge at the 5% duty cycle, so a continuous
+  world with battery carry-over loses ~4% per episode against the offline number (issue
+  28); a random-initial-charge training would fix it.
+* The NL model path (llama.cpp + GGUF) is written and unit-tested with a fake model, but not
+  yet run with real weights or the real GeoNames dump: both are downloads to approve.

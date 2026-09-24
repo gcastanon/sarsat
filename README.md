@@ -48,17 +48,22 @@ The benchmark scenario used below, `sarsat-100sat-hotspots`:
 Two larger benchmarks build on it with time-windowed *events* (clusters that can only be
 imaged for 10-30 steps, over a persistent background): `sarsat-200sat-events` (200
 satellites, DECISIONS issue 24) and `sarsat-500sat-events` (500 satellites in 50 Walker
-planes, 20,000 targets, 5% duty cycle, issue 26). On the latter, seeds 1000-1015:
+planes, 20,000 targets, 5% duty cycle, issue 26). Returns on seeds 1000-1015:
 
-| Policy | Return |
-|---|---|
-| `greedy_beam` | 0.39 |
-| `solo_plan` (independent, plans its own future) | 0.66 |
-| MAPPO, this recipe (trained on one rented A40, 2.4 h, $1.19) | 0.87 |
-| `coop_plan` (centralised planner) | 0.88 |
+| Policy | Plans ahead | Cooperates | 100 hotspots | 200 events | 500 events |
+|---|---|---|---|---|---|
+| `greedy_beam` | no | no | 0.786 | 0.440 | 0.394 |
+| `coop_dedup` (centralised, no target taken twice in a step) | no | yes | 0.789 | 0.453 | 0.432 |
+| `solo_plan` (independent, plans its own future) | yes | no | 0.807 | 0.450 | 0.658 |
+| Best MAPPO checkpoint | learned | learned | 0.898 | 0.649 | 0.868 |
+| `coop_plan` (centralised planner) | yes | yes | 0.904 | 0.670 | 0.883 |
 
-so planning ahead and cooperating are each worth a third or more, on every seed, and the
-learner reaches 98% of the planner (issue 27).
+The MAPPO rows are `mappo_v5`, `ev_mappo_e` and `ev500_mappo_a` (the last trained on one
+rented A40, 2.4 h, $1.19; issues 23, 25, 27). Each beats every independent and
+non-planning reference on 16/16 seeds and reaches 97-99% of `coop_plan`, above it on 2
+seeds at 100 satellites and none at 200 or 500. The 500-satellite benchmark is the one
+where both axes pay: planning ahead is worth two thirds on its own, cooperating only a
+tenth without planning but a third on top of it, each step up on every seed.
 
 ![Four policies at the same moment of one 500-satellite episode](docs/viewer-500sat-seed1000-step120.jpg)
 
@@ -88,7 +93,9 @@ one RTX 5070 Ti). MAPX keeps the best checkpoint. On the paired test seeds 1000-
 |---|---|
 | Random | 0.07 |
 | `greedy_beam` (best independent heuristic) | 0.79 |
+| `coop_dedup` (centralised, same-step deduplication only) | 0.79 |
 | **IPPO, this recipe** | **0.895** (beats `greedy_beam` on 16/16 seeds) |
+| MAPPO, this recipe (`./launch.sh mappo ...`) | 0.898 |
 | `coop_plan` (centralised planner, upper reference) | 0.90 |
 
 ## 4. Evaluate and view
@@ -111,7 +118,17 @@ Open `runs/viewer/hotspots100-ippo_v1/episode.html` in a browser. Play, scrub, h
 satellite or target. To compare against the references without training anything, drop
 the four CSVs of any folder in [examples/](examples/README.md) onto `sarsat/viewer.html`.
 
-## 5. Design notes
+## 5. Run it live
+
+[live/](live/README.md) runs the trained 500-satellite actor continuously at 60x real time
+in a browser, with typed tasking requests ("image the port of Rotterdam, high priority,
+within 20 minutes") turned into targets the agents collect within 30 minutes, all offline:
+
+```bash
+live/.venv/Scripts/python -m live.server --port 8000
+```
+
+## 6. Design notes
 
 * [docs/index.html](docs/index.html): the codebase guide -- code map, core data structures and
   how experiments, training and evaluation work, with diagrams and links into the source.

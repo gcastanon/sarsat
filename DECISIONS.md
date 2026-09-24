@@ -975,3 +975,59 @@ learner's 0.21 over `solo_plan` is coordination (its observation carries teammat
 contention and team access counts) and how much is better rationing has not been
 measured; `diagnose_policy.py` or an IPPO run with contention features removed would
 separate the two. One training seed, and no pure team-reward run at this size yet.
+
+## Issue 28 - A world that never ends: rolling episodes, live requests
+
+**Question.** The user wants a web demo in which the 500-satellite MAPPO actor runs
+continuously at 60x real time over a continually regenerated field, and typed requests
+("image the port of Rotterdam, high priority, within 20 minutes") become targets the agents
+collect within 30 minutes. The environment and the actor are fixed-horizon: the actor
+observes the time remaining, the cluster look-ahead is precomputed for 197 absolute steps,
+every event window closes by step 180 and priorities are normalised once at reset. How can a
+policy trained that way run forever, and how does a single-point request enter a world of
+50-target clusters, without retraining?
+
+**Method.** `sarsat/live.py` (`LiveWorld`) runs *rolling episodes*: the world is continuous
+(orbits re-based every 180 steps by advancing `phase` and `raan`, batteries carried over,
+surviving background targets kept and captured ones respawned with the environment's own
+sampler, a fresh draw of 100 events with the training windows), but every 180 steps it is
+re-packed into a fresh `WindowedCoopState` and the GRU carry is reset, so within an episode
+the policy sees exactly the training distribution. The next episode's base and cluster
+schedule are pre-built a few rows per step (the `mapx_integration` wrapper's pattern), so
+the boundary costs one geometry refresh. A request takes over the cluster whose window
+closed longest ago (or, early in an episode, the one opening last): all 50 of its interleaved
+slots (`c, c+100, ...`) are placed at the point, the first exactly there and the rest
+scattered by 12-20 km, at the event weight (never more: `max(priority)` scales the whole
+observation), with window `[t+1, min(t+deadline, 180)]`; only that cluster's column of the
+access table and the team-future counts are recomputed. A window that would outlive the
+episode is clipped and carried into the next one, so no access past step 180 is ever
+observed. Feasibility (geometry over the next 30 steps for all 500 satellites plus a battery
+forecast) is reported at submission and shown beside the outcome. Tests in
+`tests/test_live.py` pin episode 0 to `env.reset` + `env.step`, orbit re-basing, injection
+visibility, feasibility = visibility, and the spill-over rule. The actor is rebuilt without
+hydra or orbax from the run's constants and the 5.4 MB msgpack snapshot (`live/policy.py`),
+which reproduces seed 1000's return (0.8551 vs 0.8550).
+
+**Findings.** One 500-satellite step takes 83 ms on the Windows CPU (JAX, no GPU), against
+the 1 s budget at 60x. In a three-episode soak with 10 random-land requests per episode all
+30 were collected, most on the first feasible pass. Episode returns were 0.930, 0.822 and
+0.814: the trained policy ends every episode with the fleet at ~8% charge (at a 5% duty
+cycle it spends everything, unlike the 67% it keeps on the 100-satellite benchmark), so a
+carried-over battery starts the next episode nearly empty and costs ~4% against the offline
+0.868. Requests as full 50-slot clusters saturate the beam-value feature (`_squash(50)` = 1
+where training beams read ~0.5), which the mixture head tolerates; a single-target request
+would be nearly invisible, since the look-ahead value is `access x active/50`.
+
+**Decision.** Ship rolling episodes with battery carry-over as the default (`--boundary-
+battery full` recharges at the boundary, as a training reset does) and requests as full
+clusters; keep the training statistics as the default field, with the event rate, window
+range and cluster geometry as server flags. Natural language is parsed offline in three
+optional stages (rules, a small local instruct model under a JSON-schema grammar, a GeoNames
+gazetteer), with the gazetteer picking the place out of the sentence when no model is
+installed.
+
+**Consequences.** The honest continuous world exposes a training artefact: a fixed-horizon
+policy has no reason to keep charge at the end. Training with a random initial charge (or
+without the time feature) would remove the ~4% boundary cost; a request-aware scenario
+(single high-value windowed points beside the clusters) would let the policy value requests
+without the 50-slot stand-in. Both are follow-ups, not part of this change.

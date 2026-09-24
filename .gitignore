@@ -7,3 +7,7 @@ runs/
 build/
 dist/
 .venv/
+
+# live demo data (downloaded, see live/README.md)
+data/
+models/
