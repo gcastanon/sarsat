@@ -62,11 +62,14 @@ import sarsat.reference as reference  # noqa: E402
 
 _default_precompute = reference.precompute  # captured before baseline_seeds monkeypatches it
 
-from baseline_seeds import SCENARIOS, lean_precompute  # noqa: E402 (see module docstring)
+from baseline_seeds import (  # noqa: E402 (see module docstring)
+    SCENARIOS,
+    build_env,
+    lean_precompute,
+)
 
 from sarsat.env import SarSat  # noqa: E402
 from sarsat.evaluate import run_episode, write_csv, write_html  # noqa: E402
-from sarsat.windows import WindowedSarSat  # noqa: E402
 
 # ``eval_checkpoint.py`` lives in mapx_integration/, not a package; its own sys.path fix
 # (dropping mapx_integration back out) runs the moment it is imported, so "mapx.*" below
@@ -79,9 +82,10 @@ SCENARIO_TITLE = {
     "hotspots100": "sarsat-100sat-hotspots",
     "events200": "sarsat-200sat-events",
     "events500": "sarsat-500sat-events",
+    "announced500": "sarsat-500sat-announced",
 }
 # Only the 100-satellite references use the full-precision planner tables (see above).
-LEAN_SCENARIOS = ("events200", "events500")
+LEAN_SCENARIOS = ("events200", "events500", "announced500")
 TRAINED_RUNS = {
     "hotspots100": ("mappo_v5", "~/marl/runs/mappo_v5"),
     "events200": ("ev_mappo_e", "~/marl/runs/ev_mappo_e"),
@@ -95,7 +99,7 @@ def build_reference_env(scenario: str):
     kwargs = dict(SCENARIOS[scenario])
     if scenario == "hotspots100":
         return SarSat(time_limit=180, **kwargs)
-    return WindowedSarSat(time_limit=180, **kwargs)
+    return build_env(scenario)
 
 
 class TrainedPolicy:

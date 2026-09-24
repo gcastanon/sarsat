@@ -159,6 +159,11 @@ class CoopSarSat(SarSat):
         """Further ``(N, K, 1)`` slot features appended after the standard eight."""
         return []
 
+    def _known(self, state) -> Optional[Tuple[jax.Array, jax.Array]]:
+        """``((C,), (M,))`` bool: which clusters and targets the observation may use, or
+        ``None`` for all of them (``sarsat.announce`` hides requests not yet announced)."""
+        return None
+
     def cluster_schedule(self, base: State, steps: jax.Array) -> jax.Array:
         """``(len(steps), N, C)`` access of every satellite to every cluster centre. This is
         the costly part of a reset (as much geometry as one pass over all targets), so it can
@@ -304,11 +309,22 @@ class CoopSarSat(SarSat):
 
         # Scarcity discount per target: hotspot targets by their cluster's future team
         # accesses, background by the mean over clusters.
+        known = self._known(state)
         team_now = state.team_future[t1]  # (C,)
+        if known is not None:
+            team_now = jnp.where(known[0], team_now, 0.0)
         discount_c = _SCARCITY_KAPPA / (_SCARCITY_KAPPA + team_now)
-        background = jnp.mean(discount_c) if self.hotspots else jnp.ones(())
+        if known is None:
+            background = jnp.mean(discount_c) if self.hotspots else jnp.ones(())
+            team_mean = jnp.mean(team_now)
+        else:  # averages over the announced clusters only
+            n_known = jnp.maximum(jnp.sum(known[0]), 1)
+            background = jnp.where(
+                jnp.any(known[0]), jnp.sum(jnp.where(known[0], discount_c, 0.0)) / n_known, 1.0
+            )
+            team_mean = jnp.sum(team_now) / n_known
         discount = jnp.full((self.max_targets,), background)
-        team_m = jnp.full((self.max_targets,), jnp.mean(team_now))
+        team_m = jnp.full((self.max_targets,), team_mean)
         if self.hotspots:
             discount = discount.at[: self._num_hot].set(discount_c[self._cluster_id])
             team_m = team_m.at[: self._num_hot].set(team_now[self._cluster_id])
@@ -370,6 +386,9 @@ class CoopSarSat(SarSat):
         else:
             remaining = jnp.zeros((self.num_clusters,))
         window = jax.lax.dynamic_slice_in_dim(state.cluster_access, t1, self.horizon, axis=0)
+        if known is not None:
+            remaining = jnp.where(known[0], remaining, 0.0)
+            window = window & known[0]
         team_window = jax.lax.dynamic_slice_in_dim(state.team_future, t1, self.horizon, axis=0)
         window = window.astype(jnp.float32)  # (H, N, C)
         ahead_value = jnp.einsum("hnc,c->nh", window, remaining)
@@ -392,7 +411,8 @@ class CoopSarSat(SarSat):
         agents_view = jnp.concatenate([slot_features, ahead, own], axis=-1).astype(jnp.float32)
 
         # Team summary for a centralised critic.
-        left = jnp.where(state.target_active, priority, 0.0)
+        active = state.target_active if known is None else state.target_active & known[1]
+        left = jnp.where(active, priority, 0.0)
         summary = jnp.concatenate(
             [
                 jnp.stack(
