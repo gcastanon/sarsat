@@ -975,3 +975,99 @@ learner's 0.21 over `solo_plan` is coordination (its observation carries teammat
 contention and team access counts) and how much is better rationing has not been
 measured; `diagnose_policy.py` or an IPPO run with contention features removed would
 separate the two. One training seed, and no pure team-reward run at this size yet.
+
+## Issue 28 - Announced requests: every window revealed at random, at least 30 minutes ahead
+
+**Question.** Up to issue 27 every window exists from the reset, and the cooperative
+observation's team access counts and critic summary already reflect events that open much
+later. What if requests arrive over time instead: every detection (event or background)
+has a collection window, and is announced at a random time at least 30 minutes before that
+window opens? Does the MAPPO recipe still work, and how does it compare with the
+references when `solo_plan` and `coop_plan` are still allowed to see everything at the
+reset?
+
+**Method.** `sarsat/announce.py` adds `AnnouncedSarSat` / `AnnouncedCoopSarSat` on top of
+the windowed classes without changing them. Each request -- an event cluster, whose
+targets share one announcement as they share one window, or a single background target --
+is announced at a step drawn uniformly from `[0, first - 30]`, where `first` is the step its
+window opens (`announce_lead_s=1800` at 60 s steps). A request whose window opens within
+the first 30 steps is taken to have been placed before the episode began and is known
+from step 0; about a fifth of requests fall there, and the rest get a median notice of 47
+steps (10th-90th percentile 17-102 steps, seeds 1000-1015). The announcements come from a
+key folded off the reset key, so orbits, targets and windows are exactly those of the
+windowed environment for the same key.
+
+Announcements change no dynamics: a window opens at least 30 steps after its
+announcement and visibility is already gated on the window, so nothing unannounced can be
+imaged, and `step`, the plain observation, `greedy_beam` and `coop_dedup` (both act only
+on what is visible now) are unaffected. What changes is the cooperative observation.
+`CoopSarSat.observe` gained a `_known` hook (default `None`: the old code path, untouched),
+and the announced subclass uses it to drop unannounced clusters from the team access counts
+and scarcity discounts (the background discount averages over announced clusters only), from
+the cluster look-ahead, and from the critic's remaining-cluster and remaining-value summary.
+A test rewrites every hidden request's window, access, counts and imaged status and checks
+that the actor and critic inputs do not change by a bit. With everything announced the
+observation equals `WindowedCoopSarSat`'s. The layout is unchanged (9-wide slots, 73
+numbers per agent), so the network and `launch.sh` recipe carry over. The critic is
+restricted too: it only shapes the baseline, so it could legitimately see the future, but
+a first run should answer the question with nothing hidden anywhere; an asymmetric critic
+is a follow-up.
+
+`solo_plan` and `coop_plan` precompute every window at the reset. Here that makes them
+clairvoyant yardsticks rather than fair ones, which is what the user asked for.
+
+*Background windows.* `WindowedSarSat` windows the background with the events' lengths
+when `background_windows=True`; a new `background_window_steps` gives it its own (by
+default the draw is bit-identical to before, and the event windows are the same either
+way). Seed 0 of the 500-satellite field at a 5% duty cycle
+(`scripts/scenario_sweep.py --configs ann500 ann500_bg90 ann500_bg180`):
+
+| background windows | `greedy_beam` | `solo_plan` | `coop_plan` | solo / greedy | coop / solo |
+|---|---|---|---|---|---|
+| none (`sarsat-500sat-events`) | 0.407 | 0.684 | 0.891 | +68% | +30% |
+| 10-30 steps (as the events) | 0.463 | 0.680 | 0.747 | +47% | +10% |
+| **30-90 steps** | 0.397 | 0.665 | 0.814 | +68% | +22% |
+| 60-180 steps | 0.344 | 0.641 | 0.872 | +86% | +36% |
+
+Background windows as short as the events leave cooperation worth only 10%: there is
+little background left to tempt a satellite into spending charge it needs later, which is
+where issue 24's gap came from. Windows of 60-180 steps average two thirds of the episode
+and are close to no window at all. 30-90 steps is a real window, about a third of the
+episode on average, and keeps both gaps open.
+
+**Decision.** `sarsat-500sat-announced`
+(`mapx_integration/mapx/configs/env/scenario/sarsat-500sat-announced.yaml`,
+`announced500` in `scripts/baseline_seeds.py`): the `sarsat-500sat-events` field (500
+satellites in 50 Walker planes of 10, 15,000 background targets, 100 event clusters of 50
+targets at priority x10, `recharge_rate` 0.005) with 10-30 step event windows, 30-90 step
+background windows, and announcements at least 30 minutes ahead. On the paired seeds
+1000-1015 (`runs/baselines/announced500.jsonl`):
+
+| `sarsat-500sat-announced`, seeds 1000-1015 | mean | std | min | max |
+|---|---|---|---|---|
+| Random | 0.015 | 0.003 | 0.011 | 0.021 |
+| naive Greedy (observation-based) | 0.229 | 0.013 | 0.210 | 0.245 |
+| `greedy_beam` | 0.372 | 0.019 | 0.328 | 0.400 |
+| `coop_dedup` | 0.397 | 0.020 | 0.351 | 0.422 |
+| `solo_plan` (sees every window at the reset) | 0.645 | 0.031 | 0.569 | 0.683 |
+| `coop_plan` (sees every window at the reset) | 0.792 | 0.017 | 0.760 | 0.821 |
+
+`solo_plan` beats `greedy_beam` on 16 of 16 seeds (+73% on the means, +54% on the worst
+seed) and `coop_plan` beats `solo_plan` on 16 of 16 (+23%, +16% on the worst seed);
+same-step deduplication is worth 7%. The shape is issue 26's with a smaller cooperative
+gap. `coop_plan` is 0.09 lower than on `sarsat-500sat-events`, since windowed background
+targets can be missed. The untrained slot-0 rule on the announced observation scores
+0.397 on seed 0, level with `greedy_beam` (0.397), as it should.
+
+**Consequences.** The MAPX factory picks `AnnouncedCoopSarSat` whenever the scenario sets
+`announce_lead_s`. The fused auto-reset hands over exactly the state a plain reset builds,
+checked against a stand-in for the few `mapx.types` the wrapper imports, since MAPX itself
+is private and was not available. `eval_checkpoint.py`, `diagnose_policy.py`,
+`export_viewer_runs.py` and `summarize_baselines.py` know the scenario. No learner has been
+trained yet. The session that built this could not reach Runpod over SSH, MAPX, or the
+spending ledger, so the run is planned but not launched: `ann500_mappo_a`, the issue-27
+recipe with 16 environments on one A40 at $0.49/hr, expected ~3.6 h and ~$1.76, hard cap
+7 h (`mapx_integration/campaign_plan_ann500.json`). Its result should be read against
+`greedy_beam` and `coop_dedup` as the fair references and `coop_plan` as a ceiling that
+knows the future. Follow-ups: an asymmetric critic that sees unannounced requests, and
+`horizon=30` so the actor's look-ahead spans the whole notice.
