@@ -3,9 +3,9 @@
 Reads ``runs/baselines/baselines.jsonl`` (the original hotspots100 greedy_beam / solo_plan
 / coop_plan rows, no ``scenario`` field -- treated as ``hotspots100``),
 ``runs/baselines/hotspots100_extra.jsonl`` (random / greedy / coop_dedup for the same
-scenario and seeds), ``runs/baselines/events200.jsonl`` and ``events500.jsonl`` (all six
-policies), and writes ``runs/baselines/summary_all.md`` with, per scenario and policy, the
-mean/std/min/max ``return`` over the 16 seeds.
+scenario and seeds), ``runs/baselines/events200.jsonl``, ``events500.jsonl`` and
+``announced500.jsonl`` (all six policies), and writes ``runs/baselines/summary_all.md``
+with, per scenario and policy, the mean/std/min/max ``return`` over the 16 seeds.
 
 Run: ``python scripts/summarize_baselines.py``
 """
@@ -24,9 +24,10 @@ SOURCES = [
     (BASE / "hotspots100_extra.jsonl", "hotspots100"),
     (BASE / "events200.jsonl", None),  # scenario field already present
     (BASE / "events500.jsonl", None),
+    (BASE / "announced500.jsonl", None),
 ]
 POLICY_ORDER = ("random", "greedy", "greedy_beam", "solo_plan", "coop_dedup", "coop_plan")
-SCENARIO_ORDER = ("hotspots100", "events200", "events500")
+SCENARIO_ORDER = ("hotspots100", "events200", "events500", "announced500")
 
 
 def load() -> dict:

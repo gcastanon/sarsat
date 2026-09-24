@@ -41,7 +41,9 @@ reached the results below; anything after the scenario is a Hydra override.
 Scenarios: `sarsat-100sat-hotspots`, `sarsat-200sat-events`, `sarsat-500sat-events` (500
 satellites, 20,000 targets, DECISIONS.md issues 26-27; its 4-environment default is a
 guess at the WSL2 allocation cap, and the one trained run used `arch.num_envs=16` on a 48 GB
-Runpod GPU, see `CLAUDE.md`), `sarsat-100sat-pairs`, and
+Runpod GPU, see `CLAUDE.md`), `sarsat-500sat-announced` (the same field with every
+request windowed and announced at random at least 30 minutes ahead, issue 28; the run plan
+is `campaign_plan_ann500.json`), `sarsat-100sat-pairs`, and
 the plain `sarsat-{8sat-100tg,64sat-1000tg,1000sat-1000tg}`. `run.sh` is the same launcher
 without the recipe, for raw overrides. Follow a run with:
 

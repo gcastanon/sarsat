@@ -1,8 +1,8 @@
 # SarSat 500-satellite announced-requests benchmark (sarsat.announce.AnnouncedSarSat): the
 # sarsat-500sat-events field (500 satellites in 50 Walker planes of 10, 15,000 background
 # targets, 100 event clusters of 50 targets at priority x10, 5% duty cycle) with every
-# request windowed -- each background target as well as each event gets a 10-30 step
-# collection window -- and announced at a step drawn uniformly between the start of the
+# request windowed -- each event keeps its 10-30 step window and each background target
+# gets its own 30-90 step window -- and announced at a step drawn uniformly between the start of the
 # episode and 30 minutes before its window opens (at the start if it opens sooner). The
 # observation, actor and critic alike, uses nothing about a request before it is
 # announced; solo_plan and coop_plan still see every window at the reset (DECISIONS.md
@@ -18,5 +18,6 @@ task_config:
   planes: 50
   window_steps: [10, 30]
   background_windows: true
+  background_window_steps: [30, 90]
   recharge_rate: 0.005
   announce_lead_s: 1800.0
