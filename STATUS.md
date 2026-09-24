@@ -1,6 +1,6 @@
 # Status — read this first in a new chat
 
-_Last updated: 2026-09-28 (issue 29). Keep this file short and current; history lives in git and
+_Last updated: 2026-09-28 (issue 30). Keep this file short and current; history lives in git and
 the reasoning lives in DECISIONS.md._
 
 ## Where things live
@@ -54,6 +54,15 @@ the reasoning lives in DECISIONS.md._
   the Windows CPU), web UI and offline NL parser moved to the `sarsat-live` repository
   (issue 29); it drives `LiveWorld` from a sarsat tag and reads the params snapshot from
   this checkout's `runs/`. Environment-side changes for the demo are made here.
+* `sarsat-500sat-announced` (issue 30, `sarsat.announce`): the 500-satellite field with
+  every request windowed (events 10-30 steps, background 30-90) and announced at a random
+  step at least 30 minutes before its window opens; the cooperative observation, actor and
+  critic alike, uses nothing about a request before its announcement. Seeds 1000-1015:
+  `greedy_beam` 0.372, `coop_dedup` 0.397, `solo_plan` 0.645, `coop_plan` 0.792, the
+  last two clairvoyant (they see every window at the reset); each gap holds on 16/16
+  seeds. **MAPPO not trained yet**: planned as `ann500_mappo_a`
+  (`mapx_integration/campaign_plan_ann500.json`: one A40, ~3.6 h, ~$1.76, cap 7 h), to be
+  launched from the PC, which holds SSH, MAPX and the spending ledger.
 * Results deck: `reports/sarsat_marl_results.html` (built by `scripts/collect_results.py`
   + `scripts/build_deck.py` from `reports/results.json`).
 * `python -m sarsat.evaluate` writes CSV logs and a self-contained HTML map viewer;
@@ -71,6 +80,9 @@ the reasoning lives in DECISIONS.md._
    sessions cannot push tags themselves). Raise `sarsat-live`'s `sarsat>=` pin with it.
 
 ## Open questions
+
+* Does MAPPO still reach `coop_plan`'s neighbourhood when requests are announced over time
+  (issue 28)? Launch `ann500_mappo_a` and replay it on seeds 1000-1015.
 
 * Side switch vs signed encoding: no training evidence yet (DECISIONS issue 21).
 * Can a MARL learner actually capture the ~10% cooperation gap on the hotspot scenario?
