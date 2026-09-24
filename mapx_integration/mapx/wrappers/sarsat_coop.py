@@ -36,6 +36,7 @@ from mapx.types import (
 )
 from omegaconf import DictConfig, OmegaConf
 
+from sarsat.announce import AnnouncedCoopSarSat
 from sarsat.coop import CoopSarSat, CoopState
 from sarsat.windows import WindowedCoopSarSat
 
@@ -192,7 +193,10 @@ def make_sarsat_coop_envs(
     mix = float(config.env.get("credit_mix", 0.0))
     # Time-windowed scenarios (sarsat.windows) widen each observation slot by one feature;
     # tell the networks, which are instantiated from this same config after the env.
-    env_cls = WindowedCoopSarSat if "window_steps" in kwargs else CoopSarSat
+    # Announced requests (sarsat.announce) keep the windowed layout and mask the rest.
+    env_cls = CoopSarSat
+    if "window_steps" in kwargs:
+        env_cls = AnnouncedCoopSarSat if "announce_lead_s" in kwargs else WindowedCoopSarSat
     if "network" in config:
         for net in ("actor_network", "critic_network"):
             config.network[net].pre_torso.slot_dim = env_cls.slot_dim

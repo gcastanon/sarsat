@@ -40,6 +40,8 @@ EV500 = dict(
     background_windows=False,
     recharge_rate=0.01,
 )
+# The sarsat-500sat-events benchmark itself: 50 planes of 10, 5% duty cycle.
+EV500_BENCH = EV500 | dict(planes=50, recharge_rate=0.005)
 CONFIGS = {
     # 100-satellite benchmark, for reference.
     "ref100": dict(num_satellites=100, planes=10, hotspots=40),
@@ -145,6 +147,11 @@ CONFIGS = {
     "ev500_long_tight5": EV500 | dict(window_steps=(20, 60), recharge_rate=0.005),
     "ev500_p50_tight5": EV500 | dict(planes=50, recharge_rate=0.005),
     "ev500_rand_tight5": EV500 | dict(planes=0, recharge_rate=0.005),
+    # Every request windowed (DECISIONS.md issue 28): sarsat-500sat-events with the
+    # background windowed too, at the events' 10-30 steps or its own longer lengths.
+    "ann500": EV500_BENCH | dict(background_windows=True),
+    "ann500_bg90": EV500_BENCH | dict(background_windows=True, background_window_steps=(30, 90)),
+    "ann500_bg180": EV500_BENCH | dict(background_windows=True, background_window_steps=(60, 180)),
 }
 
 

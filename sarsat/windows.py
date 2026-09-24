@@ -67,16 +67,23 @@ class WindowedSarSat(SarSat):
         *args,
         window_steps: Tuple[int, int] = (0, 0),
         background_windows: bool = True,
+        background_window_steps: Optional[Tuple[int, int]] = None,
         **kwargs,
     ) -> None:
         """``window_steps`` is the ``(min, max)`` window length; with
         ``background_windows=False`` only the hotspot clusters are windowed events and the
-        background stays available all episode."""
+        background stays available all episode. ``background_window_steps`` gives the
+        background its own window lengths (default: ``window_steps``, drawn exactly as
+        before; the cluster windows are the same either way)."""
         super().__init__(*args, **kwargs)
-        if not 0 <= window_steps[0] <= window_steps[1] <= self.time_limit:
-            raise ValueError("window_steps must satisfy 0 <= min <= max <= time_limit")
+        for steps in (window_steps, background_window_steps or window_steps):
+            if not 0 <= steps[0] <= steps[1] <= self.time_limit:
+                raise ValueError("window lengths must satisfy 0 <= min <= max <= time_limit")
         self.window_steps = tuple(int(w) for w in window_steps)
         self.background_windows = background_windows
+        self.background_window_steps = tuple(
+            int(w) for w in (background_window_steps or window_steps)
+        )
 
     def _initial_state(
         self, key: jax.Array, num_targets: Optional[Union[int, jax.Array]] = None
@@ -92,23 +99,31 @@ class WindowedSarSat(SarSat):
         lo, hi = self.window_steps
         if hi == 0:
             return jnp.stack([jnp.zeros((m,), jnp.int32), jnp.full((m,), self.time_limit)], -1)
-        k_len, k_open = jax.random.split(key)
-        units = m + self.hotspots  # one window per target slot, then one per cluster
-        length = jax.random.randint(k_len, (units,), lo, hi + 1)
-        first = 1 + jnp.floor(
-            jax.random.uniform(k_open, (units,)) * (self.time_limit - length + 1)
-        ).astype(jnp.int32)
-        window = jnp.stack([first, first + length - 1], axis=-1)  # (units, 2)
+        # One window per target slot, then one per cluster.
+        window = self._place_windows(key, m + self.hotspots, lo, hi)  # (units, 2)
+        background = window[:m]
+        if self.background_window_steps != self.window_steps:
+            background = self._place_windows(
+                jax.random.fold_in(key, 1), m, *self.background_window_steps
+            )
         if not self.hotspots:
-            return window[:m]
+            return background
         slot = jnp.arange(m)
         is_hot = slot < self.hotspots * self.hotspot_targets
-        background = window[:m]
         if not self.background_windows:
             background = jnp.stack(
                 [jnp.zeros((m,), jnp.int32), jnp.full((m,), self.time_limit)], -1
             )
         return jnp.where(is_hot[:, None], window[m:][slot % self.hotspots], background)
+
+    def _place_windows(self, key: jax.Array, count: int, lo: int, hi: int) -> jax.Array:
+        """``(count, 2)`` windows of length uniform in ``[lo, hi]``, placed uniformly."""
+        k_len, k_open = jax.random.split(key)
+        length = jax.random.randint(k_len, (count,), lo, hi + 1)
+        first = 1 + jnp.floor(
+            jax.random.uniform(k_open, (count,)) * (self.time_limit - length + 1)
+        ).astype(jnp.int32)
+        return jnp.stack([first, first + length - 1], axis=-1)
 
     def _target_geometry(self, state, step: jax.Array) -> Tuple[jax.Array, jax.Array]:
         body, visible = super()._target_geometry(state, step)
@@ -127,6 +142,6 @@ class WindowedCoopSarSat(CoopSarSat, WindowedSarSat):
         return (window[:, 0] <= steps[:, None]) & (steps[:, None] <= window[:, 1])
 
     def _extra_slot_features(self, state, slot_target: jax.Array, t1: jax.Array) -> list:
-        scale = self.window_steps[1] or self.time_limit
+        scale = max(self.window_steps[1], self.background_window_steps[1]) or self.time_limit
         closes = state.target_window[slot_target, 1]
         return [jnp.clip((closes - t1 + 1) / scale, 0.0, 1.0)[..., None]]

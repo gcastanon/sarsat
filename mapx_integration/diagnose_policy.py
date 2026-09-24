@@ -106,7 +106,8 @@ def _sarsat_only_kwargs(merged: Dict[str, Any]) -> Dict[str, Any]:
     from sarsat.env import SarSat
 
     allowed = set(inspect.signature(SarSat.__init__).parameters) - {"self"}
-    allowed |= {"window_steps", "background_windows"}
+    # announce_lead_s is left out: announcements change no dynamics (sarsat.announce).
+    allowed |= {"window_steps", "background_windows", "background_window_steps"}
     return {k: v for k, v in merged.items() if k in allowed}
 
 

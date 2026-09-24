@@ -164,6 +164,7 @@ def load_baselines(repo_root: str, scenario: str = "") -> dict:
         "sarsat-100sat-hotspots": "hotspots100",
         "sarsat-200sat-events": "events200",
         "sarsat-500sat-events": "events500",
+        "sarsat-500sat-announced": "announced500",
     }
     wanted = aliases.get(scenario, scenario)
     baselines: dict[int, dict[str, float]] = {}

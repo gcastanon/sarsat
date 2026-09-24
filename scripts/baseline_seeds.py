@@ -4,7 +4,9 @@ For a fixed ``--scenario`` (``hotspots100``: 100 satellites, 8000 max targets, 4
 of 50 targets each weighted 10x, 10 planes; ``events200``: the same but 200 satellites, 20
 planes, and the hotspots are 10-30 step windowed events over a persistent background at a
 10% duty cycle; ``events500``: 500 satellites, 50 planes, 100 events over 15,000 background
-targets at a 5% duty cycle -- see ``mapx_integration/mapx/configs/env/scenario/sarsat-*.yaml``),
+targets at a 5% duty cycle; ``announced500``: the same with every request windowed and
+announced at random at least 30 minutes ahead, which only the observation sees -- see
+``mapx_integration/mapx/configs/env/scenario/sarsat-*.yaml``),
 all with a 180-step time limit, this runs any of ``--policies`` (``random``, ``greedy``, and the
 four ``sarsat.reference`` yardsticks ``greedy_beam``, ``solo_plan``, ``coop_dedup``,
 ``coop_plan``) for every seed in ``[--seed-start, --seed-end]`` (inclusive), resetting with
@@ -39,6 +41,7 @@ import jax.numpy as jnp
 import numpy as np
 
 import sarsat.reference as reference
+from sarsat.announce import AnnouncedSarSat
 from sarsat.evaluate import greedy_policy
 from sarsat.reference import REFERENCE_POLICIES, ReferenceController, lean_precompute
 from sarsat.windows import WindowedSarSat
@@ -77,6 +80,18 @@ SCENARIOS = {
         background_windows=False,
         recharge_rate=0.005,
     ),
+    "announced500": dict(
+        num_satellites=500,
+        max_targets=20000,
+        hotspots=100,
+        hotspot_targets=50,
+        hotspot_weight=10.0,
+        planes=50,
+        window_steps=(10, 30),
+        background_windows=True,
+        recharge_rate=0.005,
+        announce_lead_s=1800.0,
+    ),
 }
 
 
@@ -87,8 +102,10 @@ reference.precompute = lean_precompute
 def build_env(scenario: str) -> WindowedSarSat:
     """``WindowedSarSat`` for ``scenario`` (== plain ``SarSat`` for ``hotspots100``, since it
     has no ``window_steps`` and ``WindowedSarSat`` with ``window_steps=(0, 0)`` reproduces
-    ``SarSat`` entirely)."""
-    return WindowedSarSat(**SCENARIOS[scenario], time_limit=180)
+    ``SarSat`` entirely); ``AnnouncedSarSat`` when the scenario announces its requests."""
+    kwargs = SCENARIOS[scenario]
+    cls = AnnouncedSarSat if "announce_lead_s" in kwargs else WindowedSarSat
+    return cls(**kwargs, time_limit=180)
 
 
 def random_action(spec, key: jax.Array) -> jax.Array:
