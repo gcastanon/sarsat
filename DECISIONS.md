@@ -1034,3 +1034,24 @@ policy has no reason to keep charge at the end. Training with a random initial c
 without the time feature) would remove the ~4% boundary cost; a request-aware scenario
 (single high-value windowed points beside the clusters) would let the policy value requests
 without the 50-slot stand-in. Both are follow-ups, not part of this change.
+
+## Issue 29 - The live demo moves to its own repository
+
+**Question.** The repository held two things: the environment with its training and
+evaluation (this repo's purpose), and the live demo's server, web UI, snapshot loader and
+natural-language parser (issue 28). Should the demo live elsewhere, and where is the line?
+
+**Decision.** `live/` and `tests/test_nl.py` move, with their history, to `sarsat-live`
+(package renamed `live` -> `sarsat_live`); `sarsat.live.LiveWorld` and `tests/test_live.py`
+stay here. The demo has its own dependencies (FastAPI, llama.cpp, GeoNames data), its own
+Windows CPU venv and its own pace of change, and nothing here imported it. `LiveWorld`, by
+contrast, is environment code: it re-packs `WindowedCoopState`, re-bases orbits and rewrites
+access-table columns, and its test pins episode 0 to `env.reset` + `env.step`, so a change to
+`windows.py` or `coop.py` that breaks it must fail this suite, not a downstream one.
+
+**Consequences.** The version goes to 0.2.0 and the demo requires `sarsat>=0.2.0`; tag each
+release the demo is tested against and raise its pin with it. The demo also depends on a
+MAPX checkout with `mapx_integration/mapx/` copied in (the actor's network modules) and reads
+the params snapshot from this checkout's `runs/` (`$SARSAT_RUNS`). Changes such as the
+issue 28 follow-ups (random initial charge, a request-aware scenario) are made and tested
+here; the demo only picks up a new tag.

@@ -1,6 +1,6 @@
 # Status — read this first in a new chat
 
-_Last updated: 2026-09-24 (issue 28). Keep this file short and current; history lives in git and
+_Last updated: 2026-09-25 (issue 29). Keep this file short and current; history lives in git and
 the reasoning lives in DECISIONS.md._
 
 ## Where things live
@@ -12,7 +12,7 @@ the reasoning lives in DECISIONS.md._
 | Codebase guide | `docs/index.html` | code map, data flow, experiment / training / evaluation walkthrough; update it when those change |
 | Deferred ideas | `IMPROVEMENTS.md` | move an item out when it is built |
 | MAPX integration | `mapx_integration/` | drop-in files for the MAPX repo, see its README |
-| Live demo | `live/` + `sarsat/live.py` | rolling episodes, web UI, offline NL tasking; see `live/README.md` |
+| Live demo | `sarsat/live.py` here; server, UI, NL parser in [sarsat-live](https://github.com/gcastanon/sarsat-live) | rolling episodes stay here (tested); the demo pins `sarsat>=0.2.0` (issue 29) |
 | Claude Project knowledge | mirrors of the three docs above + this file | search only; not the source of truth |
 
 ## Current state
@@ -49,12 +49,11 @@ the reasoning lives in DECISIONS.md._
   CPU venv (`.venv`, git-ignored) while the GPU was busy.
 * Live demo (issue 28): `sarsat.live.LiveWorld` runs the episodic env as rolling episodes
   (orbits re-based, batteries carried, background respawned, fresh events) so the trained
-  actor runs forever; `live/server.py` streams it to `live/ui/index.html` at 60x real time
-  (83 ms per 500-satellite step on the Windows CPU); typed requests become 50-slot clusters
-  with a <= 30-step window (30/30 collected in the soak); `live/nl/` parses them offline
-  (rules + optional local GGUF model + GeoNames gazetteer; data and model are downloads,
-  not in the repo). Runs in a Windows Python 3.12 venv (`live/.venv`, git-ignored) that
-  holds CPU JAX, flax and a copy of MAPX.
+  actor runs forever; typed requests become 50-slot clusters with a <= 30-step window
+  (30/30 collected in the soak). The server (60x real time, 83 ms per 500-satellite step on
+  the Windows CPU), web UI and offline NL parser moved to the `sarsat-live` repository
+  (issue 29); it drives `LiveWorld` from a sarsat tag and reads the params snapshot from
+  this checkout's `runs/`. Environment-side changes for the demo are made here.
 * Results deck: `reports/sarsat_marl_results.html` (built by `scripts/collect_results.py`
   + `scripts/build_deck.py` from `reports/results.json`).
 * `python -m sarsat.evaluate` writes CSV logs and a self-contained HTML map viewer;
@@ -85,7 +84,6 @@ the reasoning lives in DECISIONS.md._
 * The trained policy ends episodes at ~8% charge at the 5% duty cycle, so a continuous
   world with battery carry-over loses ~4% per episode against the offline number (issue
   28); a random-initial-charge training would fix it.
-* NL tasking measured (live/README.md): rules + GeoNames gazetteer 100% on hand-written
+* NL tasking measured (sarsat-live README): rules + GeoNames gazetteer 100% on hand-written
   phrases, 96.7% synthetic (residual: homonyms); the local Qwen2.5-1.5B model is only the
-  fallback for places the sentence does not name. Data and model live in git-ignored
-  `data/geonames/` and `models/`.
+  fallback for places the sentence does not name.
