@@ -120,13 +120,11 @@ the four CSVs of any folder in [examples/](examples/README.md) onto `sarsat/view
 
 ## 5. Run it live
 
-[live/](live/README.md) runs the trained 500-satellite actor continuously at 60x real time
-in a browser, with typed tasking requests ("image the port of Rotterdam, high priority,
-within 20 minutes") turned into targets the agents collect within 30 minutes, all offline:
-
-```bash
-live/.venv/Scripts/python -m live.server --port 8000
-```
+[sarsat-live](https://github.com/gcastanon/sarsat-live) runs the trained 500-satellite actor
+continuously at 60x real time in a browser, with typed tasking requests ("image the port of
+Rotterdam, high priority, within 20 minutes") turned into targets the agents collect within
+30 minutes, all offline. It drives `sarsat.live.LiveWorld` (rolling episodes, here) from a
+tagged sarsat release; DECISIONS issues 28 and 29.
 
 ## 6. Design notes
 
