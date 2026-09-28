@@ -1,6 +1,6 @@
 # Status — read this first in a new chat
 
-_Last updated: 2026-09-25 (issue 29). Keep this file short and current; history lives in git and
+_Last updated: 2026-09-28 (issue 29). Keep this file short and current; history lives in git and
 the reasoning lives in DECISIONS.md._
 
 ## Where things live
@@ -66,6 +66,9 @@ the reasoning lives in DECISIONS.md._
    `examples/8sat-100tg-seed0/` (the command is in `examples/README.md`), refresh the
    baseline numbers in `README.md`, rerun the suite.
 3. End: commit with a message that says *why*, push, and update this file.
+4. Release: bump `version` in `pyproject.toml` and `__version__` in `sarsat/__init__.py` in
+   a PR; on merge `.github/workflows/tag-release.yml` tags the commit `vX.Y.Z` (Claude
+   sessions cannot push tags themselves). Raise `sarsat-live`'s `sarsat>=` pin with it.
 
 ## Open questions
 
