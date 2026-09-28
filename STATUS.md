@@ -82,7 +82,7 @@ the reasoning lives in DECISIONS.md._
 ## Open questions
 
 * Does MAPPO still reach `coop_plan`'s neighbourhood when requests are announced over time
-  (issue 28)? Launch `ann500_mappo_a` and replay it on seeds 1000-1015.
+  (issue 30)? Launch `ann500_mappo_a` and replay it on seeds 1000-1015.
 
 * Side switch vs signed encoding: no training evidence yet (DECISIONS issue 21).
 * Can a MARL learner actually capture the ~10% cooperation gap on the hotspot scenario?

@@ -147,7 +147,7 @@ CONFIGS = {
     "ev500_long_tight5": EV500 | dict(window_steps=(20, 60), recharge_rate=0.005),
     "ev500_p50_tight5": EV500 | dict(planes=50, recharge_rate=0.005),
     "ev500_rand_tight5": EV500 | dict(planes=0, recharge_rate=0.005),
-    # Every request windowed (DECISIONS.md issue 28): sarsat-500sat-events with the
+    # Every request windowed (DECISIONS.md issue 30): sarsat-500sat-events with the
     # background windowed too, at the events' 10-30 steps or its own longer lengths.
     "ann500": EV500_BENCH | dict(background_windows=True),
     "ann500_bg90": EV500_BENCH | dict(background_windows=True, background_window_steps=(30, 90)),

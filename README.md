@@ -65,6 +65,12 @@ seeds at 100 satellites and none at 200 or 500. The 500-satellite benchmark is t
 where both axes pay: planning ahead is worth two thirds on its own, cooperating only a
 tenth without planning but a third on top of it, each step up on every seed.
 
+`sarsat-500sat-announced` (issue 30) is the same field with every request windowed (events
+10-30 steps, background 30-90) and announced at a random time at least 30 minutes before its
+window opens; the observation uses nothing about a request before then. On the same seeds:
+`greedy_beam` 0.372, `coop_dedup` 0.397, and the clairvoyant `solo_plan` 0.645 and
+`coop_plan` 0.792 (they see every window at the reset). No learner has been trained on it yet.
+
 ![Four policies at the same moment of one 500-satellite episode](docs/viewer-500sat-seed1000-step120.jpg)
 
 *Seed 1000, step 120 of 180. Top: `greedy_beam`, `solo_plan`; bottom: the trained MAPPO
