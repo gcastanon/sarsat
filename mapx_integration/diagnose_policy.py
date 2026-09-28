@@ -371,7 +371,6 @@ def run_trained(
     agg = _new_agg()
     ts = raw_timestep
     cumret = 0.0
-    final_battery = priority_np * 0.0  # placeholder, overwritten each step
     last_battery_post = np.asarray(state.battery)
 
     for t in range(1, coop_env.time_limit + 1):
@@ -505,7 +504,7 @@ def run_reference(policy: str, seed: int, scenario_kwargs: Dict[str, Any]) -> Di
     def make_step():
         def step(state, action):
             step_i = state.step + 1
-            pointing, sensing, in_beam = env._apply_action(state, step_i, action)
+            _pointing, sensing, in_beam = env._apply_action(state, step_i, action)
             imaged = jnp.any(in_beam, axis=0)
             reward = jnp.sum(jnp.where(imaged, state.target_priority, 0.0))
             battery_pre = state.battery
@@ -634,6 +633,11 @@ def _fmt(x: Optional[float], spec: str = ".3f") -> str:
     return "n/a" if x is None else format(x, spec)
 
 
+def _pct(x: Optional[float], spec: str = ".1f") -> str:
+    """A fraction as a percentage, or n/a."""
+    return _fmt(None if x is None else 100 * x, spec)
+
+
 def print_table(rows: List[Dict[str, Any]], title: str) -> None:
     header = (
         f"{'seed':>6} {'policy':>12} {'return':>8} {'hot%':>7} {'bg%':>7} "
@@ -649,13 +653,15 @@ def print_table(rows: List[Dict[str, Any]], title: str) -> None:
             d = row[pol]
             print(
                 f"{seed:>6} {pol:>12} {_fmt(d['return_total'])} "
-                f"{_fmt(100 * d['hotspot_fraction_imaged'] if d['hotspot_fraction_imaged'] is not None else None, '.1f'):>6}% "
-                f"{_fmt(100 * d['background_fraction_imaged'] if d['background_fraction_imaged'] is not None else None, '.1f'):>6}% "
+                f"{_pct(d['hotspot_fraction_imaged']):>6}% "
+                f"{_pct(d['background_fraction_imaged']):>6}% "
                 f"{d['honoured_looks']:>9} {d['empty_looks']:>6} {d['hotspot_looks']:>6} "
-                f"{d['background_looks']:>6} {_fmt(d['mean_captured_priority_per_honoured_look_units'], '.3f'):>9} "
+                f"{d['background_looks']:>6} "
+                f"{_fmt(d['mean_captured_priority_per_honoured_look_units'], '.3f'):>9} "
                 f"{_fmt(d['mean_battery'], '.3f'):>8} "
                 f"{_fmt(100 * d['frac_steps_battery_below_sense_cost'], '.1f'):>7}% "
-                f"{_fmt(d['final_mean_battery'], '.3f'):>7} {_fmt(d['duplicate_waste_units'], '.3f'):>9}"
+                f"{_fmt(d['final_mean_battery'], '.3f'):>7} "
+                f"{_fmt(d['duplicate_waste_units'], '.3f'):>9}"
             )
 
 
@@ -673,10 +679,10 @@ def print_window_table(rows: List[Dict[str, Any]], title: str) -> None:
             d = row[pol]
             print(
                 f"{seed:>6} {pol:>12} "
-                f"{_fmt(100 * d['event_look_fraction_of_honoured'] if d['event_look_fraction_of_honoured'] is not None else None, '.1f'):>8}% "
+                f"{_pct(d['event_look_fraction_of_honoured']):>8}% "
                 f"{d['background_while_event_visible_looks']:>11} "
                 f"{_fmt(d['battery_at_window_open_mean'], '.3f'):>9} "
-                f"{_fmt(100 * d['event_value_lost_fraction'] if d['event_value_lost_fraction'] is not None else None, '.1f'):>8}% "
+                f"{_pct(d['event_value_lost_fraction']):>8}% "
                 f"{_fmt(d['event_value_lost_to_missed_windows'], '.4f'):>8}"
             )
 
@@ -795,8 +801,7 @@ def main() -> None:
     trained_override = cli_override or None
 
     tasks = [
-        (run_dir, args.system, seed, args.tol, reference_kwargs, trained_override)
-        for seed in seeds
+        (run_dir, args.system, seed, args.tol, reference_kwargs, trained_override) for seed in seeds
     ]
     workers = max(1, min(args.workers, len(seeds), 3))
     print(f"Running {len(seeds)} seed(s) across {workers} worker process(es)...", flush=True)
@@ -829,7 +834,7 @@ def main() -> None:
         bins = r["trained"].get("sense_rate_by_slot0_value")
         if bins:
             parts = [
-                f"[{b['lo']:.2f},{b['hi']:.2f}]:{_fmt(b['sense_rate'], '.1%') if b['sense_rate'] is not None else 'n/a'} (n={b['count']})"
+                f"[{b['lo']:.2f},{b['hi']:.2f}]:{_fmt(b['sense_rate'], '.1%')} (n={b['count']})"
                 for b in bins
             ]
             print("  sense rate by slot0 value: " + "  ".join(parts))
