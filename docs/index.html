@@ -239,7 +239,7 @@ footer { margin-top: 64px; padding-top: 16px; border-top: 1px solid var(--border
 <text x="24" y="223" class="t-h h2">Learning-ready variants · sarsat/</text>
 <a data-src="sarsat/coop.py:84"><text x="24" y="251" class="t"><tspan class="mono">coop.py</tspan><tspan class="t-m"> CoopSarSat: beam slots, global state</tspan></text></a>
 <a data-src="sarsat/windows.py:62"><text x="24" y="275" class="t"><tspan class="mono">windows.py</tspan><tspan class="t-m"> time-windowed event targets</tspan></text></a>
-<a data-src="sarsat/windows.py:119"><text x="24" y="299" class="t"><tspan class="mono">WindowedCoopSarSat</tspan><tspan class="t-m"> both combined</tspan></text></a>
+<a data-src="sarsat/windows.py:134"><text x="24" y="299" class="t"><tspan class="mono">WindowedCoopSarSat</tspan><tspan class="t-m"> both combined</tspan></text></a>
 <a data-src="sarsat/__init__.py"><text x="24" y="323" class="t"><tspan class="mono">__init__.py</tspan><tspan class="t-m"> public API</tspan></text></a>
 
 <!-- B3 yardsticks & logging -->
@@ -305,11 +305,11 @@ footer { margin-top: 64px; padding-top: 16px; border-top: 1px solid var(--border
 <a data-src="sarsat/windows.py:62"><text x="530" y="185" text-anchor="middle" class="t-h mono">WindowedSarSat</text></a>
 <text x="530" y="202" text-anchor="middle" class="t-s">WindowedState (+ target_window)</text>
 <rect class="b2" x="235" y="245" width="230" height="46" rx="8" style="stroke-width:2.4"/>
-<a data-src="sarsat/windows.py:119"><text x="350" y="265" text-anchor="middle" class="t-h mono">WindowedCoopSarSat</text></a>
+<a data-src="sarsat/windows.py:134"><text x="350" y="265" text-anchor="middle" class="t-h mono">WindowedCoopSarSat</text></a>
 <text x="350" y="282" text-anchor="middle" class="t-s">WindowedCoopState · slot_dim 9</text>
 </svg>
 </div>
-<figcaption>Arrows point from subclass to parent. The two teal classes are the ones MAPX trains on. <a data-src="mapx_integration/mapx/wrappers/sarsat_coop.py:195">make_sarsat_coop_envs</a> picks <code>WindowedCoopSarSat</code> when the scenario config sets <code>window_steps</code>, and <code>CoopSarSat</code> otherwise.</figcaption>
+<figcaption>Arrows point from subclass to parent. The two teal classes are the ones MAPX trains on. <a data-src="mapx_integration/mapx/wrappers/sarsat_coop.py:197">make_sarsat_coop_envs</a> picks <code>WindowedCoopSarSat</code> when the scenario config sets <code>window_steps</code> (<code>AnnouncedCoopSarSat</code> when it also sets <code>announce_lead_s</code>), and <code>CoopSarSat</code> otherwise.</figcaption>
 </figure>
 
 <div class="table-wrap"><table>
@@ -317,9 +317,10 @@ footer { margin-top: 64px; padding-top: 16px; border-top: 1px solid var(--border
 <tr><td><a data-src="sarsat/env.py:39"><code>SarSat</code></a></td><td>The base dynamics. Its observation is egocentric: the nearest accessible targets over a short look-ahead, the nearest neighbouring satellites, and the satellite's own battery.</td><td><code>python -m sarsat.evaluate</code>, reference baselines, tests, the plain <code>env=sarsat</code> MAPX wrapper</td></tr>
 <tr><td><a data-src="sarsat/coop.py:84"><code>CoopSarSat</code></a></td><td>A MARL-oriented observation: ranked candidate beams with their value and <em>contention</em> (how many charged teammates could take the same target), a 16-step look-ahead over hotspot clusters, and a compact <code>global_state</code> for centralised critics. It also caches the geometry for the next step inside the state.</td><td>MAPX training (<code>env=sarsat_coop</code>), <code>eval_checkpoint.py</code></td></tr>
 <tr><td><a data-src="sarsat/windows.py:62"><code>WindowedSarSat</code></a></td><td>A <code>target_window</code> of shape <code>(M, 2)</code>. A target counts as accessible only between its first and last step. Every hotspot cluster shares one window, so it behaves as a single event.</td><td>Reference baselines on the <code>events</code> scenarios</td></tr>
-<tr><td><a data-src="sarsat/windows.py:119"><code>WindowedCoopSarSat</code></a></td><td>The Coop observation with the cluster look-ahead limited to open windows, plus a ninth slot feature: the fraction of the target's window still open.</td><td>MAPX training on <code>sarsat-{200,500}sat-events</code></td></tr>
+<tr><td><a data-src="sarsat/windows.py:134"><code>WindowedCoopSarSat</code></a></td><td>The Coop observation with the cluster look-ahead limited to open windows, plus a ninth slot feature: the fraction of the target's window still open.</td><td>MAPX training on <code>sarsat-{200,500}sat-events</code></td></tr>
+<tr><td><a data-src="sarsat/announce.py:68"><code>AnnouncedSarSat</code></a>, <a data-src="sarsat/announce.py:107"><code>AnnouncedCoopSarSat</code></a></td><td>An announcement step per request (cluster or background target), at least <code>announce_lead_s</code> before its window opens. The dynamics are <code>WindowedSarSat</code>'s; the Coop observation, actor and critic, masks every request not yet announced (the <code>_known</code> hook in <code>CoopSarSat</code>). DECISIONS issue 30.</td><td>Reference baselines and MAPX training on <code>sarsat-500sat-announced</code></td></tr>
 </table></div>
-<div class="note"><strong>Why reset keys line up across classes.</strong> Every class builds its orbits and targets in <a data-src="sarsat/env.py:221"><code>_initial_state</code></a> with the same key splits. <code>WindowedSarSat</code> derives its window key with <code>fold_in(key, 24)</code>. Resetting any of the four with <code>PRNGKey(seed)</code> therefore gives bit-identical orbits and targets. This is what makes the paired-seed comparison in <a href="#evaluation">§8</a> fair.</div>
+<div class="note"><strong>Why reset keys line up across classes.</strong> Every class builds its orbits and targets in <a data-src="sarsat/env.py:221"><code>_initial_state</code></a> with the same key splits. <code>WindowedSarSat</code> derives its window key with <code>fold_in(key, 24)</code>. The announced classes draw their announcements from a further key folded off the reset key. Resetting any of these classes with <code>PRNGKey(seed)</code> therefore gives bit-identical orbits and targets. This is what makes the paired-seed comparison in <a href="#evaluation">§8</a> fair.</div>
 
 <!-- =============================================================== 4 -->
 <h2 id="data">4. Core data elements</h2>
@@ -336,11 +337,11 @@ footer { margin-top: 64px; padding-top: 16px; border-top: 1px solid var(--border
 <tr><td><code>target_active</code></td><td><code>(M,)</code> bool</td><td>True until the target is imaged. Padding slots are False.</td></tr>
 <tr><td><code>target_window</code> <span class="muted">(windowed only)</span></td><td><code>(M, 2)</code> int32</td><td>First and last step at which the target can be imaged.</td></tr>
 <tr><td><code>cluster_access</code>, <code>team_future</code> <span class="muted">(Coop only)</span></td><td><code>(T+H+1, N, C)</code>, <code>(T+H+1, C)</code></td><td>The whole episode's access schedule to each cluster centre, computed once at reset. <code>team_future</code> counts how many access opportunities to each cluster remain from each step on.</td></tr>
-<tr><td><code>body</code>, <code>visible</code> <span class="muted">(Coop only)</span></td><td><code>(N, M, 3)</code>, <code>(N, M)</code></td><td>Cached line of sight to every target at <code>step + 1</code>, which is the most expensive computation in the environment. <a data-src="sarsat/coop.py:190"><code>refresh</code></a> fills it, and both the observation and the next transition reuse it.</td></tr>
+<tr><td><code>body</code>, <code>visible</code> <span class="muted">(Coop only)</span></td><td><code>(N, M, 3)</code>, <code>(N, M)</code></td><td>Cached line of sight to every target at <code>step + 1</code>, which is the most expensive computation in the environment. <a data-src="sarsat/coop.py:195"><code>refresh</code></a> fills it, and both the observation and the next transition reuse it.</td></tr>
 </table></div>
 
 <h3 id="d-action">Action</h3>
-<p>The action is a <code>(N, 4)</code> float32 array, one row per satellite. The MAPX wrapper declares it as a <em>hybrid</em> action: one continuous block of size 2 and two binary blocks (<a data-src="mapx_integration/mapx/wrappers/sarsat_coop.py:147">action_spec</a>).</p>
+<p>The action is a <code>(N, 4)</code> float32 array, one row per satellite. The MAPX wrapper declares it as a <em>hybrid</em> action: one continuous block of size 2 and two binary blocks (<a data-src="mapx_integration/mapx/wrappers/sarsat_coop.py:148">action_spec</a>).</p>
 <div class="bar" role="img" aria-label="Action layout: incidence, squint, side, sense">
   <div class="s1" style="flex:1">[0] incidence ∈ [-1,1]</div><div class="s1" style="flex:1">[1] squint ∈ [-1,1]</div><div class="s4" style="flex:1">[2] side {0=L, 1=R}</div><div class="s3" style="flex:1">[3] sense (&gt;0.5)</div>
 </div>
@@ -356,14 +357,14 @@ footer { margin-top: 64px; padding-top: 16px; border-top: 1px solid var(--border
 </div>
 <div class="table-wrap"><table>
 <tr><th>Part</th><th>Features</th></tr>
-<tr><td style="white-space:nowrap">Beam slot k</td><td><code>valid, incidence, squint, side, value, scarce_value, team_future, contention</code>, plus <code>window_left</code> on windowed scenarios. The slots come from non-maximum suppression over the 64 most valuable accessible targets: slot 0 is the beam that captures the most priority (what <code>greedy_beam</code> would aim at), slot 1 is the best beam over what slot 0 leaves, and so on (<a data-src="sarsat/coop.py:283"><code>_slots</code></a>).</td></tr>
+<tr><td style="white-space:nowrap">Beam slot k</td><td><code>valid, incidence, squint, side, value, scarce_value, team_future, contention</code>, plus <code>window_left</code> on windowed scenarios. The slots come from non-maximum suppression over the 64 most valuable accessible targets: slot 0 is the beam that captures the most priority (what <code>greedy_beam</code> would aim at), slot 1 is the best beam over what slot 0 leaves, and so on (<a data-src="sarsat/coop.py:288"><code>_slots</code></a>).</td></tr>
 <tr><td>Look-ahead</td><td>For each of the next H steps, the value of the hotspot clusters this satellite will have access to, both raw and scarcity-weighted.</td></tr>
 <tr><td>Own</td><td><code>battery, can_sense, time_remaining, visible_value, visible_count</code>.</td></tr>
 <tr><td>Team summary</td><td>Time remaining, battery mean and quantiles, the fraction of satellites that can sense, remaining hotspot and background value, sorted cluster remaining fractions, and the team's mean look-ahead. It has a fixed size whatever N is: 133 numbers per agent here, where the joint observation would need 9,600.</td></tr>
 </table></div>
 
 <h3 id="d-timestep">TimeStep and reward</h3>
-<p><code>step</code> returns a Jumanji <code>TimeStep</code>. Its <code>reward</code> has shape <code>(N,)</code> and holds the same team reward for every agent. <code>discount</code> becomes 0 only when every target has been imaged. The episode also ends (is truncated) at <code>time_limit</code>. <a data-src="sarsat/coop.py:209"><code>transition_with_credit</code></a> also returns each satellite's own share, <code>credit (N,)</code>, where a target hit by several beams at once is split evenly. The training wrapper can blend this share into the reward (<a href="#training">§7</a>).</p>
+<p><code>step</code> returns a Jumanji <code>TimeStep</code>. Its <code>reward</code> has shape <code>(N,)</code> and holds the same team reward for every agent. <code>discount</code> becomes 0 only when every target has been imaged. The episode also ends (is truncated) at <code>time_limit</code>. <a data-src="sarsat/coop.py:214"><code>transition_with_credit</code></a> also returns each satellite's own share, <code>credit (N,)</code>, where a target hit by several beams at once is split evenly. The training wrapper can blend this share into the reward (<a href="#training">§7</a>).</p>
 
 <h3 id="d-files">Data at rest: files an experiment produces</h3>
 <div class="table-wrap"><table>
@@ -372,7 +373,7 @@ footer { margin-top: 64px; padding-top: 16px; border-top: 1px solid var(--border
 <tr><td><code>runs/&lt;run&gt;/checkpoints/rec_&lt;sys&gt;/&lt;ts&gt;/</code></td><td>MAPX (orbax)</td><td>The best checkpoint by in-training evaluation. A full checkpoint includes env states (1.7 GB at 500 satellites).</td></tr>
 <tr><td><code>runs/&lt;run&gt;/outputs/*/*/.hydra/config.yaml</code></td><td>Hydra</td><td>The fully resolved config. The evaluators rebuild the env and network from it.</td></tr>
 <tr><td><code>runs/baselines/*.jsonl</code></td><td><a data-src="scripts/baseline_seeds.py">baseline_seeds.py</a></td><td>One line per (seed, policy): <code>{scenario, seed, policy, return, looks}</code>.</td></tr>
-<tr><td><code>runs/&lt;run&gt;/eval_seeds.json</code></td><td><a data-src="mapx_integration/eval_checkpoint.py:186">eval_checkpoint.py</a></td><td>Per-seed <code>policy_return</code> next to <code>greedy_beam</code>, <code>solo_plan</code> and <code>coop_plan</code>, plus a summary.</td></tr>
+<tr><td><code>runs/&lt;run&gt;/eval_seeds.json</code></td><td><a data-src="mapx_integration/eval_checkpoint.py:187">eval_checkpoint.py</a></td><td>Per-seed <code>policy_return</code> next to <code>greedy_beam</code>, <code>solo_plan</code> and <code>coop_plan</code>, plus a summary.</td></tr>
 <tr><td><a data-src="reports/results.json"><code>reports/results.json</code></a></td><td><a data-src="scripts/collect_results.py">collect_results.py</a></td><td><code>{scenario: [{label, kind, mean, std, min, max, n, beats_greedy_beam, per_seed}]}</code>.</td></tr>
 <tr><td><code>satellites/looks/targets/captures.csv</code> + <code>episode.html</code></td><td><a data-src="sarsat/evaluate.py:227">write_csv</a> / <a data-src="sarsat/evaluate.py:375">write_html</a></td><td>A step-by-step episode log (<a data-src="sarsat/evaluate.py:83"><code>EpisodeLog</code></a>) and a self-contained map viewer. See <a data-src="examples/README.md">examples/</a>.</td></tr>
 </table></div>
@@ -453,7 +454,7 @@ footer { margin-top: 64px; padding-top: 16px; border-top: 1px solid var(--border
     )
     ...  # TimeStep with the same reward for all N agents and observation self._observe(state)</code></pre></div>
 
-<p><code>CoopSarSat</code> divides the same logic into pieces so that the training wrapper can put a reset between them. <a data-src="sarsat/coop.py:209"><code>transition_with_credit</code></a> computes the next state, the reward and each satellite's credit from the cached geometry. <a data-src="sarsat/coop.py:235"><code>make_timestep</code></a> then refreshes the cache for the next step and builds the observation.</p>
+<p><code>CoopSarSat</code> divides the same logic into pieces so that the training wrapper can put a reset between them. <a data-src="sarsat/coop.py:214"><code>transition_with_credit</code></a> computes the next state, the reward and each satellite's credit from the cached geometry. <a data-src="sarsat/coop.py:240"><code>make_timestep</code></a> then refreshes the cache for the next step and builds the observation.</p>
 
 <div class="snip"><div class="cap"><span>Using the environment directly</span><a data-src="README.md">README.md</a></div>
 <pre><code class="lang-py">import jax
@@ -574,7 +575,7 @@ exec bash "$here/run.sh" "$system" "$run" "env/scenario=$scenario" \
 <a data-src="mapx_integration/mapx/configs/network/sarsat.yaml"><text x="24" y="108" class="t mono">network/sarsat.yaml</text></a>
 <text x="24" y="128" class="t-s">+ launch.sh overrides</text>
 <rect class="b5" x="10" y="180" width="230" height="84" rx="10"/>
-<a data-src="mapx_integration/mapx/wrappers/sarsat_coop.py:184"><text x="24" y="204" class="t-h mono">make_sarsat_coop_envs</text></a>
+<a data-src="mapx_integration/mapx/wrappers/sarsat_coop.py:185"><text x="24" y="204" class="t-h mono">make_sarsat_coop_envs</text></a>
 <text x="24" y="224" class="t-s">train env: fused reset, credit_mix</text>
 <text x="24" y="242" class="t-s">eval env: plain reset, team reward</text>
 <text x="24" y="258" class="t-s">both: reward × 10</text>
@@ -590,7 +591,7 @@ exec bash "$here/run.sh" "$system" "$run" "env/scenario=$scenario" \
 
 <!-- env -->
 <rect class="b2" x="300" y="230" width="330" height="130" rx="10"/>
-<a data-src="mapx_integration/mapx/wrappers/sarsat_coop.py:96"><text x="314" y="254" class="t-h mono">SarSatCoopWrapper.step</text></a>
+<a data-src="mapx_integration/mapx/wrappers/sarsat_coop.py:97"><text x="314" y="254" class="t-h mono">SarSatCoopWrapper.step</text></a>
 <text x="314" y="278" class="t-s">CoopSarSat.transition_with_credit → reward, credit</text>
 <text x="314" y="298" class="t-s">reward ← (1−c)·team + c·N·credit, then × 10</text>
 <text x="314" y="318" class="t-s">fused auto-reset when the episode ends</text>
@@ -640,14 +641,14 @@ exec bash "$here/run.sh" "$system" "$run" "env/scenario=$scenario" \
 <li><strong>The slot-mixture head.</strong> <a data-src="mapx_integration/mapx/networks/sarsat.py:123"><code>SlotMixtureDistribution</code></a> first chooses one of the K ranked slots, a latent choice that is marginalised out in <code>log_prob</code>, then samples a tanh-Gaussian around that slot's aim. Sensing is a separate masked Bernoulli. The head starts out biased towards slot 0 (<code>slot0_bias=3</code>), so "take the second-best beam because a teammate will take the best" costs one logit rather than a large pointing offset.</li>
 <li><strong>Credit mixing.</strong> With the pure team reward, IPPO stalls at about 0.74. Blending in each satellite's own share lifts IPPO and MAPPO to 0.89–0.90 on the hotspot benchmark. The mean over agents is still the team reward:</li>
 </ol>
-<div class="snip"><div class="cap"><span>Reward seen by the learner</span><a data-src="mapx_integration/mapx/wrappers/sarsat_coop.py:122">wrappers/sarsat_coop.py:122</a></div>
+<div class="snip"><div class="cap"><span>Reward seen by the learner</span><a data-src="mapx_integration/mapx/wrappers/sarsat_coop.py:123">wrappers/sarsat_coop.py:122</a></div>
 <pre><code class="lang-py">if self.credit_mix:
     # Blend the team reward with each satellite's own share of it (mean over agents
     # is still the team reward). Off by default: the task's reward is the team's.
     mixed = (1.0 - self.credit_mix) * reward + self.credit_mix * self.num_agents * credit
     timestep = timestep.replace(reward=mixed * self.reward_scale)</code></pre></div>
 <ol start="4">
-<li><strong>Fused auto-reset.</strong> Under <code>vmap</code>, MAPX's <code>AutoResetWrapper</code> computes a full reset <em>and</em> an observation on every step. The wrapper instead resets inside <code>step</code>, before the observation is built. The next episode's expensive cluster schedule is built three rows per step while the current episode runs, and <a data-src="mapx_integration/mapx/wrappers/sarsat_coop.py:160"><code>PassthroughAutoReset</code></a> stands in for MAPX's wrapper. The eval env keeps the ordinary reset.</li>
+<li><strong>Fused auto-reset.</strong> Under <code>vmap</code>, MAPX's <code>AutoResetWrapper</code> computes a full reset <em>and</em> an observation on every step. The wrapper instead resets inside <code>step</code>, before the observation is built. The next episode's expensive cluster schedule is built three rows per step while the current episode runs, and <a data-src="mapx_integration/mapx/wrappers/sarsat_coop.py:161"><code>PassthroughAutoReset</code></a> stands in for MAPX's wrapper. The eval env keeps the ordinary reset.</li>
 </ol>
 
 <div class="snip"><div class="cap"><span>How MAPX is patched without editing it (abridged)</span><a data-src="mapx_integration/train_sarsat.py:25">train_sarsat.py:25</a></div>
@@ -691,7 +692,7 @@ module.hydra_entry_point()</code></pre></div>
 <defs><marker id="ar4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0,0 L10,5 L0,10 Z"/></marker></defs>
 <!-- row 1 -->
 <rect class="b3" x="10" y="20" width="200" height="58" rx="8"/>
-<a data-src="scripts/baseline_seeds.py:133"><text x="22" y="44" class="t-h mono">baseline_seeds.py</text></a>
+<a data-src="scripts/baseline_seeds.py:152"><text x="22" y="44" class="t-h mono">baseline_seeds.py</text></a>
 <text x="22" y="64" class="t-s">reference policies × seeds</text>
 <rect class="plain" x="265" y="20" width="210" height="58" rx="8"/>
 <text x="277" y="44" class="t-h mono">runs/baselines/*.jsonl</text>
@@ -717,10 +718,10 @@ module.hydra_entry_point()</code></pre></div>
 <text x="797" y="179" class="t-s">→ sarsat_marl_results.html</text>
 <!-- row 3 -->
 <rect class="b3" x="10" y="250" width="200" height="58" rx="8"/>
-<a data-src="mapx_integration/diagnose_policy.py:730"><text x="22" y="274" class="t-h mono">diagnose_policy.py</text></a>
+<a data-src="mapx_integration/diagnose_policy.py:737"><text x="22" y="274" class="t-h mono">diagnose_policy.py</text></a>
 <text x="22" y="294" class="t-s">hotspot / battery / duplicates</text>
 <rect class="b3" x="265" y="250" width="210" height="58" rx="8"/>
-<a data-src="scripts/export_viewer_runs.py:202"><text x="277" y="274" class="t-h mono">export_viewer_runs.py</text></a>
+<a data-src="scripts/export_viewer_runs.py:206"><text x="277" y="274" class="t-h mono">export_viewer_runs.py</text></a>
 <text x="277" y="294" class="t-s">4 CSVs + episode.html</text>
 <rect class="plain" x="530" y="250" width="200" height="58" rx="8"/>
 <a data-src="sarsat/viewer.html"><text x="542" y="274" class="t-h mono">sarsat/viewer.html</text></a>

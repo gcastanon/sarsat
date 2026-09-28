@@ -22,7 +22,7 @@ announcements they are clairvoyant yardsticks, not fair ones.
 
 Orbits, targets and windows are those of ``WindowedSarSat`` for the same key; the
 announcements are sampled from a further key folded off the reset key (DECISIONS.md
-issue 28).
+issue 30).
 """
 
 import math

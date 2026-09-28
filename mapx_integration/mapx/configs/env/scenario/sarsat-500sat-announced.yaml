@@ -6,7 +6,7 @@
 # episode and 30 minutes before its window opens (at the start if it opens sooner). The
 # observation, actor and critic alike, uses nothing about a request before it is
 # announced; solo_plan and coop_plan still see every window at the reset (DECISIONS.md
-# issue 28).
+# issue 30).
 name: SarSat
 task_name: sarsat-500sat-announced
 task_config:
