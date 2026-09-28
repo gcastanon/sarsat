@@ -11,7 +11,7 @@ requires-python = ">=3.10"
 dependencies = ["jax", "jumanji>=1.1.0", "numpy"]
 
 [project.optional-dependencies]
-dev = ["pytest", "ruff"]
+dev = ["pytest", "ruff==0.16.9"]  # pinned: new ruff releases add rules
 
 [tool.setuptools.packages.find]
 include = ["sarsat*"]
