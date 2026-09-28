@@ -1,0 +1,51 @@
+# Tag each release: when the version in pyproject.toml has no vX.Y.Z tag yet, tag the commit
+# that set it. Runs on every push to main (a no-op once the tag exists) and on demand.
+# Releasing is then: bump `version` in pyproject.toml and `__version__` in sarsat/__init__.py
+# in a PR, merge it.
+name: tag-release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: tag-release
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # the version commit may be older than HEAD
+
+      - name: Read the version
+        id: version
+        run: |
+          version=$(python3 -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
+          package=$(python3 -c 'import ast, sys; t = ast.parse(open("sarsat/__init__.py").read()); print(next(n.value.value for n in t.body if isinstance(n, ast.Assign) and n.targets[0].id == "__version__"))')
+          if [ "$version" != "$package" ]; then
+            echo "::error::pyproject.toml says $version but sarsat/__init__.py says $package"
+            exit 1
+          fi
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+
+      - name: Tag the commit that set it
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            echo "$TAG already exists at $(git rev-list -n1 "$TAG"); nothing to do"
+            exit 0
+          fi
+          commit=$(git log -n1 --format=%H -G '^version = ' -- pyproject.toml)
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" "$commit" -m "sarsat ${TAG#v}"
+          git push origin "refs/tags/$TAG"
+          echo "Tagged $commit as $TAG"
