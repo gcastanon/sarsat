@@ -1,8 +1,12 @@
-"""Regenerate ``sarsat/land_mask_1deg.npy`` (one-off; not needed at runtime).
+"""Regenerate ``sarsat/land_mask_1deg.npy`` (one-off; not needed at runtime; see
+DECISIONS.md issue 9 for why the mask is embedded rather than a runtime dependency).
 
 Downsamples the 30-arc-second NOAA GLOBE land/ocean mask shipped with the
 ``global-land-mask`` pip package to a 1-degree majority-vote grid and stores it
 bit-packed (8.1 kB).  Row 0 is the cell [89N, 90N]; column 0 is [180W, 179W].
+
+Reads the mask from the installed ``global_land_mask`` package; writes
+``sarsat/land_mask_1deg.npy``. Run: ``python scripts/build_land_mask.py``. Seconds on CPU.
 """
 
 import os

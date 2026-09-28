@@ -16,7 +16,13 @@ The gap between ``coop_plan`` and the better independent policy is what a coordi
 multi-agent learner could gain over an independent one. The centralised policies know the
 whole constellation's future access, so they are a yardstick, not a bound on MARL.
 
-Run: ``python scripts/cooperation_gap.py --satellites 100 --planes 10 --hotspots 40``
+This is the measurement tool behind DECISIONS.md issue 22 (what target distribution makes
+cooperation worth training for); it stays in the repository as a yardstick for future
+changes to the sensor or battery model, not just a one-time report.
+
+Run: ``python scripts/cooperation_gap.py --satellites 100 --planes 10 --hotspots 40``.
+Reads nothing; prints the per-policy returns and the gap to stdout. A few minutes on GPU
+at 100 satellites.
 """
 
 from __future__ import annotations

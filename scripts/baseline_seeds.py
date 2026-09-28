@@ -27,7 +27,8 @@ GB at 200 satellites x 8000 targets, which would OOM a 15 GB host.
 
 Run: ``python scripts/baseline_seeds.py --scenario hotspots100 --seed-start 1000 \
 --seed-end 1015 --output runs/baselines/part0.jsonl`` (default ``--policies``: the four
-reference yardsticks)
+reference yardsticks). One episode per (seed, policy); minutes per seed at 100
+satellites, longer at 500 -- GPU recommended for anything beyond a handful of seeds.
 """
 
 from __future__ import annotations

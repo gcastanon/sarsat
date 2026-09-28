@@ -30,7 +30,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from sarsat.evaluate import _beam_directions, _ground_point, _latlon
+from sarsat.evaluate import beam_directions, ecef_to_latlon, ray_ground_point
 from sarsat.orbits import EARTH_RADIUS_KM, EARTH_ROTATION_RAD_S, in_az_el_box, satellite_frames
 from sarsat.targets import latlon_to_unit_vector
 from sarsat.types import Orbit
@@ -148,6 +148,8 @@ class LiveWorld:
 
         self._rows = int(schedule_rows_per_step)
         total = env.schedule_length
+        # Start prebuilding early enough that the next episode's full schedule
+        # (``total`` rows, ``_rows`` at a time) is ready by the boundary at step ``T``.
         self._prebuild_start = max(1, self.T - math.ceil(total / self._rows) - 1)
         self._next_base: Optional[WindowedState] = None
         self._next_rows: List[jax.Array] = []
@@ -179,6 +181,9 @@ class LiveWorld:
         return state, self.env.observe(state)
 
     def _advance(self, state: WindowedCoopState, action: jax.Array):
+        """The transition plus the diagnostics ``step`` needs for logging: which beams
+        fired and where, and the geometry to draw them (as ``sarsat.evaluate.run_episode``
+        recomputes from ``_apply_action`` inside its own jitted step)."""
         env = self.env
         pointing = env._decode_pointing(state.orbit, action[:, : env._pointing_dim])
         sensing = (action[:, env._pointing_dim] > 0.5) & env._can_sense(state.battery)
@@ -208,7 +213,7 @@ class LiveWorld:
         angles = np.concatenate(
             [pointing[sats, None, :], pointing[sats, None, :] + self._corner_offsets], axis=1
         )
-        ground = _ground_point(position[sats, None, :], _beam_directions(frame[sats], angles))
+        ground = ray_ground_point(position[sats, None, :], beam_directions(frame[sats], angles))
         footprints = {int(s): ground[i, 1:] for i, s in enumerate(sats)}
         boresight = {int(s): ground[i, 0] for i, s in enumerate(sats)}
 
@@ -246,7 +251,7 @@ class LiveWorld:
             reward=reward,
             battery=np.asarray(self.state.battery),
             sensing=sensing,
-            sat_latlon=_latlon(position),
+            sat_latlon=ecef_to_latlon(position),
             captures=captures,
             footprints=footprints,
             boresight=boresight,
@@ -257,6 +262,9 @@ class LiveWorld:
         )
 
     def _update_requests(self, in_beam: np.ndarray, active: np.ndarray) -> List[Request]:
+        """Resolve every pending request against this step's captures: collected if its
+        centre target (or, failing that, most of its cluster) was imaged, missed once its
+        deadline has passed, otherwise still pending."""
         updates = []
         for r in self.requests:
             if r.status != "pending":
@@ -301,6 +309,8 @@ class LiveWorld:
         )
 
     def _schedule_rows(self, base: WindowedState, start: jax.Array) -> jax.Array:
+        """One batch of ``cluster_schedule`` rows, ``self._rows`` steps starting at
+        ``start``: the unit :meth:`_prebuild` accumulates across steps."""
         steps = start + jnp.arange(self._rows)
         return self.env.cluster_schedule(base, steps)
 
@@ -323,6 +333,10 @@ class LiveWorld:
         return env.assemble(base, access[: env.schedule_length])
 
     def _prebuild(self) -> None:
+        """Advance the next episode's schedule by one batch of rows, sampling its base
+        state (fresh events and windows) on the first call. Spreads the cost of building
+        a full episode's cluster-access schedule over the steps leading up to the
+        boundary instead of paying for it in one step (see :meth:`_rollover`)."""
         if self._next_base is None:
             self._next_base = self._jit_build_base(
                 self.state, jax.random.fold_in(self.key, self.episode + 1)
@@ -333,6 +347,9 @@ class LiveWorld:
             self._next_rows.append(self._jit_rows(self._next_base, jnp.int32(done)))
 
     def _rollover(self) -> List[Request]:
+        """End the episode and start the next one: finish the prebuilt schedule if it
+        fell behind, assemble the new state, and carry any still-pending request into a
+        cluster of the fresh field."""
         total = self.env.schedule_length
         while self._next_base is None or len(self._next_rows) * self._rows < total:
             self._prebuild()

@@ -4,6 +4,9 @@ Each entry records one design issue: the question, the options weighed, the deci
 and its consequences. Anything rejected as "beyond a basic model" is cross-referenced to
 [IMPROVEMENTS.md](IMPROVEMENTS.md). Status is **Decided** unless noted.
 
+Issues are in the order they were decided. 1-21 define the environment; 22-28 are
+experiments (benchmarks, training runs, the live demo) and report their measurements.
+
 | # | Issue | Decision in one line |
 |---|-------|----------------------|
 | 1 | Package boundary | Standalone Jumanji environment + a thin MAPX wrapper |
@@ -28,6 +31,12 @@ and its consequences. Anything rejected as "beyond a basic model" is cross-refer
 | 20 | Evaluation logging and viewer | Host-side loop over the jitted step; one self-contained HTML |
 | 21 | Two-sided access and the action encoding | Binary side switch (default); signed encoding kept behind a flag |
 | 22 | Cooperation pressure | Hotspot targets + battery-binding + overlapping planes; measured, not assumed |
+| 23 | Observation and architecture for MARL | `CoopSarSat`: ranked candidate beams + cluster look-ahead + compact global state; `credit_mix` 0.5 closes the gap to `coop_plan` |
+| 24 | A 200-satellite cooperation benchmark | Time-windowed event clusters over a persistent background (`sarsat-200sat-events`) |
+| 25 | Overnight learner results | MAPPO reaches 0.898 / 0.649 against `coop_plan` 0.904 / 0.670 on the two benchmarks |
+| 26 | A 500-satellite three-way benchmark | `sarsat-500sat-events`: planning and cooperation both pay; `lean_precompute` for the references |
+| 27 | First learner at 500 satellites | One MAPPO run on a rented A40: 0.868, 98% of `coop_plan` |
+| 28 | A world that never ends | Rolling episodes (`LiveWorld`), live requests as event clusters, offline NL tasking |
 
 ---
 
@@ -246,7 +255,9 @@ slots are kept, best first. Each slot holds, for every look-ahead step,
 the same slot across the look-ahead steps, so the agent sees a short track rather than
 unrelated detections.
 
-**Consequences.** Width is `3 * slots * N`. With the defaults the accessible region is
+**Consequences.** Width is `3 * slots * N`. (Since issue 21 a slot holds the accessible
+flag followed by the action's own pointing slots -- incidence, squint and side by default
+-- so the width is now `4 * slots * N`.) With the defaults the accessible region is
 about 404,000 km^2, or 0.079% of the globe, so 10 slots only saturate for dense target
 fields (roughly 10,000 targets and up), where the dropped ones are the ones furthest
 from the inner edge of the band. Ranking by off-nadir angle means near ties go to the

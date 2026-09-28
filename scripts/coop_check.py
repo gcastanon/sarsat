@@ -1,4 +1,12 @@
-"""Sanity check and benchmark for CoopSarSat: the slot-0 policy should match greedy_beam."""
+"""Sanity check and throughput benchmark for ``CoopSarSat``: the slot-0 policy (always
+act on the top-ranked beam) should reproduce ``greedy_beam``, since slot 0 is defined as
+the beam that captures the most priority. One-off research tool: it produced the
+seed-by-seed comparison table in DECISIONS.md issue 23. Reads nothing; writes its report
+to stdout only.
+
+Run: ``python scripts/coop_check.py 16`` (arg: number of vmapped environments, default 16).
+A few seconds on GPU (compile dominates at this scale).
+"""
 
 import sys
 import time

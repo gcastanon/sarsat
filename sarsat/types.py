@@ -32,5 +32,5 @@ class Observation(NamedTuple):
     """Per-agent observation. Field names match ``mapx.types.Observation``."""
 
     agents_view: jax.Array  # (N, obs_dim) float32 egocentric features
-    action_mask: jax.Array  # (N, 3) bool; the sense slot closes when the battery is too low
+    action_mask: jax.Array  # (N, action_dim) bool; only the sense slot closes (low battery)
     step_count: jax.Array  # (N,) int32

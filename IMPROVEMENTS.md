@@ -2,7 +2,14 @@
 
 The brief was a basic, fast model. Everything below was considered and left out to keep
 the environment small; each item notes where it would plug in. Issue numbers refer to
-[DECISIONS.md](DECISIONS.md).
+[DECISIONS.md](DECISIONS.md). When an item gets built, move it out of this file and into
+the DECISIONS issue that builds it.
+
+Already built, for reference: Walker-style planes (`sample_planes`, issue 22),
+time-windowed event targets (`sarsat/windows.py`, issue 24), a compact global state for
+centralised critics (`CoopSarSat`, issue 23), per-satellite credit assignment
+(`credit_mix`, issue 23), trained-policy evaluation (`mapx_integration/eval_checkpoint.py`,
+`live/policy.py`) and GPU throughput measurements (issues 23 and 27).
 
 ## Orbital mechanics (issue 2)
 * **J2 nodal precession.** Adds a constant rate to the node angle - a one-line change in
@@ -10,8 +17,9 @@ the environment small; each item notes where it would plug in. Issue numbers ref
   sun-synchronous behaviour over multi-day episodes.
 * **Eccentric orbits, drag, manoeuvres.** Require solving Kepler's equation or
   integrating; would break the closed-form look-ahead.
-* **Structured constellations.** Walker-delta / sun-synchronous planes instead of
-  independent random orbits: only `sample_orbits` changes.
+* **Sun-synchronous planes.** `planes=` gives Walker-style planes with random
+  inclinations; a sun-synchronous family (inclination tied to altitude, J2 above) would
+  change only `sample_planes`.
 * **Ground-relative flight direction.** The along-track axis ignores the ~0.5 km/s
   contribution of Earth rotation (issue 3).
 
@@ -44,20 +52,20 @@ the environment small; each item notes where it would plug in. Issue numbers ref
 * **Idle and slewing loads, battery depth-of-discharge limits, thermal duty limits.**
 
 ## Targets and reward (issues 9, 10, 11)
-* **Non-uniform priorities in the observation.** Priorities are uniform today, so they
-  are not observed. When they vary, add `priority * num_targets` as a fourth feature per
-  target slot and consider ranking slots by priority.
-* **Dynamic targets.** Targets that appear during the episode, expire, move (ships) or
-  need revisits. Time windows in particular would widen the cooperation gap far beyond
-  the ~10% that persistent hotspots give (DECISIONS.md issue 22), because a target that
-  only one satellite can reach before it expires has to be *assigned*.
+* **Priorities in the plain `SarSat` observation.** Hotspots and events make priorities
+  non-uniform, but only `CoopSarSat` observes them (through beam value). The plain
+  observation could add `priority * num_targets` as a fourth feature per target slot and
+  rank slots by priority.
+* **Moving and revisit targets.** Time-windowed events exist (issue 24); targets that
+  move (ships) or need repeated looks do not.
 * **A real assignment solver as the cooperation yardstick.** `scripts/cooperation_gap.py`
   uses greedy heuristics for the centralised reference; a rolling-horizon ILP over
   (satellite, step, target) would give a tighter upper bound.
 * **Finer land mask / regional target distributions.** The mask is 1 degree; targets are
   uniform by area within land and within water.
-* **Per-agent reward shaping / credit assignment.** Only the shared team reward exists;
-  there is no energy penalty for sensing empty ground beyond the battery itself.
+* **Reward shaping.** The environment pays only the shared team reward (the MAPX wrapper's
+  `credit_mix` blends in each satellite's own share, issue 23); there is no energy penalty
+  for sensing empty ground beyond the battery itself.
 
 ## Observation and scaling (issues 13, 14, 18, 19)
 * **Spatial hashing.** Target geometry is dense O(N x M) and the neighbour search dense
@@ -70,9 +78,9 @@ the environment small; each item notes where it would plug in. Issue numbers ref
   remove the wrap at az = +-pi.
 * **Earth-blocked neighbours / communication model.** Neighbours are purely geometric;
   there are no inter-satellite links, ground stations, downlink or data storage.
-* **Scalable global state for centralised critics.** The MAPX wrapper concatenates all
-  observations; a pooled (mean / max) or fixed-size summary (targets remaining, mean
-  battery, time) would let MAPPO-style critics scale past tens of satellites.
+* **Scalable global state for the plain wrapper.** `CoopSarSat` has a compact global
+  state (issue 23), but the plain `SarSat` MAPX wrapper still concatenates every agent's
+  observation, which limits its centralised critics to tens of satellites.
 * **Observation of absolute position / time of day.** Omitted to keep the view strictly
   egocentric.
 
@@ -82,7 +90,6 @@ the environment small; each item notes where it would plug in. Issue numbers ref
   satellite x 180 step file from tens of MB to a few.
 * **Viewer projections and detail.** Equirectangular only, 1-degree coastlines, no zoom.
   A globe or a zoomable tile map would need an external library.
-* **Trained-policy evaluation.** `run_episode` takes any `Observation -> action`
-  function; a helper that loads a MAPX checkpoint and drives its recurrent actor
-  (carrying the hidden state) is not included.
-* **Benchmark on accelerators.** Throughput has only been measured on a 2-core CPU.
+* **Parameter snapshot tool.** `live/policy.py` loads a 5 MB msgpack snapshot of the
+  actor, which was extracted from a MAPX checkpoint on the training host by a short orbax
+  script that is not in this repository.

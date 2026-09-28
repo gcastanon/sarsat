@@ -1,4 +1,10 @@
-"""Time the pieces of a CoopSarSat step under vmap (GPU)."""
+"""Time the pieces of a ``CoopSarSat`` step under ``vmap`` (GPU). One-off profiling tool:
+it produced the ``base_state`` 30 ms -> 7 ms figure in DECISIONS.md issue 23 that justified
+switching ``TargetSampler``'s ``searchsorted`` to ``method="sort"``. Reads nothing; prints
+per-piece timings to stdout only.
+
+Run: ``python scripts/coop_profile.py 32`` (arg: number of vmapped environments, default
+32). A few seconds on GPU."""
 
 import sys
 import time

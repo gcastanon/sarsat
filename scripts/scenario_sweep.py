@@ -2,8 +2,16 @@
 
 Like ``scripts/cooperation_gap.py`` but over a table of named configurations, with the
 battery exposed, and writing one JSON line per (config, policy) so partial results survive.
+Research tool: the ``CONFIGS`` table and its sweep results produced the 200-satellite
+scenario choice in DECISIONS.md issue 24 and the 500-satellite ``ev500_*`` family in
+issue 26; it is kept in the repository so a future change to the sensor or battery model
+can be re-checked against the same table.
 
-Run: ``python scripts/scenario_sweep.py --configs walker20 pairs --out runs/sweep.jsonl``
+Reads nothing; writes one JSON line per (config, seed, policy) to ``--out`` if given
+(otherwise results only print to stdout).
+
+Run: ``python scripts/scenario_sweep.py --configs walker20 pairs --out runs/sweep.jsonl``.
+Minutes per config at 200 satellites, longer at 500; GPU recommended.
 """
 
 from __future__ import annotations

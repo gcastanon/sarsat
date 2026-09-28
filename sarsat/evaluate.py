@@ -104,7 +104,7 @@ class EpisodeLog:
         return self.reward.shape[0]
 
 
-def _ground_point(position: np.ndarray, direction: np.ndarray) -> np.ndarray:
+def ray_ground_point(position: np.ndarray, direction: np.ndarray) -> np.ndarray:
     """Lat/lon [deg] where rays from ``position`` (..., 3) along ``direction`` hit Earth."""
     b = np.sum(position * direction, axis=-1)
     c = np.sum(position**2, axis=-1) - EARTH_RADIUS_KM**2
@@ -112,16 +112,17 @@ def _ground_point(position: np.ndarray, direction: np.ndarray) -> np.ndarray:
     with np.errstate(invalid="ignore"):
         s = -b - np.sqrt(disc)  # nearest intersection; NaN when the ray misses the Earth
     point = position + s[..., None] * direction
-    return _latlon(point)
+    return ecef_to_latlon(point)
 
 
-def _latlon(point: np.ndarray) -> np.ndarray:
+def ecef_to_latlon(point: np.ndarray) -> np.ndarray:
+    """Lat/lon [deg] of Earth-fixed points ``(..., 3)``."""
     lat = np.degrees(np.arctan2(point[..., 2], np.hypot(point[..., 0], point[..., 1])))
     lon = np.degrees(np.arctan2(point[..., 1], point[..., 0]))
     return np.stack([lat, lon], axis=-1)
 
 
-def _beam_directions(frame: np.ndarray, angles_deg: np.ndarray) -> np.ndarray:
+def beam_directions(frame: np.ndarray, angles_deg: np.ndarray) -> np.ndarray:
     """World-frame unit vectors for body-frame (az, el) angles (N, K, 2); frame is (N, 3, 3)."""
     az, el = np.radians(angles_deg[..., 0]), np.radians(angles_deg[..., 1])
     body = np.stack([np.sin(el), np.cos(el) * np.sin(az), np.cos(el) * np.cos(az)], axis=-1)
@@ -174,7 +175,7 @@ def run_episode(
         return apply_and_step(state, act(state, obs))
 
     position0, _ = satellite_frames(state.orbit, 0.0)
-    sat_latlon = [_latlon(np.asarray(position0))]
+    sat_latlon = [ecef_to_latlon(np.asarray(position0))]
     battery = [np.asarray(state.battery)]
     pointing_deg, sensing, boresight, footprint, captures, rewards = [], [], [], [], [], []
     hw = np.asarray(env._beam_half_width) * 180 / np.pi
@@ -188,9 +189,9 @@ def run_episode(
         position, frame = np.asarray(position, np.float64), np.asarray(frame, np.float64)
         pointing = np.degrees(pointing)
         angles = np.concatenate([pointing[:, None, :], pointing[:, None, :] + corner_offsets], 1)
-        ground = _ground_point(position[:, None, :], _beam_directions(frame, angles))
+        ground = ray_ground_point(position[:, None, :], beam_directions(frame, angles))
 
-        sat_latlon.append(_latlon(position))
+        sat_latlon.append(ecef_to_latlon(position))
         battery.append(np.asarray(state.battery))
         pointing_deg.append(pointing)
         sensing.append(sense)

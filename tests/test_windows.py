@@ -54,6 +54,8 @@ def test_windows_gate_visibility_and_keep_orbits() -> None:
 
 
 def test_windowed_coop_observation() -> None:
+    """The window feature is finite and bounded, and the cluster look-ahead in the
+    observation is zero outside each cluster's own window."""
     env = WindowedCoopSarSat(**SMALL, window_steps=(10, 30), background_windows=False)
     assert env.slot_dim == CoopSarSat.slot_dim + 1
     assert env.obs_dim == env.slot_dim * env.num_slots + 2 * env.horizon + 5

@@ -13,7 +13,8 @@ Two subclasses that leave their parents' behaviour intact:
   the same key and ``window_steps=(0, 0)`` reproduces it entirely.
 * :class:`WindowedCoopSarSat` -- :class:`sarsat.coop.CoopSarSat` on top of it: the cluster
   look-ahead is gated on the cluster windows and each beam slot gains a ninth feature,
-  the fraction of the target's window still open. Everything else, including the
+  the steps until the target's window closes as a fraction of the longest window
+  (``window_steps[1]``), clipped to ``[0, 1]``. Everything else, including the
   eight-feature layout of ``CoopSarSat``, is unchanged.
 
 Why windows: with persistent targets a satellite that skips a target can leave it to the
@@ -32,6 +33,8 @@ from sarsat.types import Orbit
 
 
 class WindowedState(NamedTuple):
+    """:class:`sarsat.types.State` plus each target's imaging window."""
+
     key: jax.Array
     step: jax.Array
     orbit: Orbit
@@ -44,6 +47,8 @@ class WindowedState(NamedTuple):
 
 
 class WindowedCoopState(NamedTuple):
+    """:class:`sarsat.coop.CoopState` plus each target's imaging window."""
+
     key: jax.Array
     step: jax.Array
     orbit: Orbit

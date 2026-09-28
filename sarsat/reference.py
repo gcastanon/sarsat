@@ -91,6 +91,8 @@ def choose(policy, t, vis, az, el, prio, hw, battery, pre, env):
     """Target index each satellite aims at (-1: no look) under one of the four policies."""
     n_sat, remaining = vis.shape[0], env.time_limit - t
     choice = np.full(n_sat, -1)
+    # Sensing budget for the rest of the episode: what the current charge buys outright,
+    # plus what the sustained duty cycle (recharge / cost) adds over the steps left.
     looks_left = np.minimum(
         np.floor(battery / (env.sense_cost - env.recharge_rate) + 1e-6)
         + env.recharge_rate / env.sense_cost * remaining,
@@ -103,6 +105,8 @@ def choose(policy, t, vis, az, el, prio, hw, battery, pre, env):
         weight = prio
 
     def threshold(n):
+        """Value of satellite ``n``'s ``looks_left``-th best future opportunity: a look
+        worth less than this now should wait for a better one later."""
         best = pre["best_team" if policy == "coop_plan" else "best_own"][t - 1 :, n]
         k = int(looks_left[n])
         return np.sort(best)[::-1][k - 1] if 0 < k <= len(best) else 0.0

@@ -1,4 +1,12 @@
-"""Probe how much GPU memory JAX can get under WSL2: total in 1 GB chunks, then one block."""
+"""Probe how much GPU memory JAX can get under WSL2: total in 1 GB chunks, then one block.
+
+One-off diagnostic: it is what established the ~4 GB single-allocation cap under WSL2's
+default BFC allocator recorded in DECISIONS.md issue 23 (worked around there with
+``XLA_PYTHON_CLIENT_ALLOCATOR=platform``). Reads and writes nothing; prints pass/fail per
+chunk size to stdout.
+
+Run: ``python scripts/gpu_alloc_probe.py``. Seconds; GPU only, meaningless on CPU.
+"""
 
 import jax.numpy as jnp
 

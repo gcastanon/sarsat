@@ -16,6 +16,9 @@ Output: ``reports/results.json``, ``{scenario: [row, ...]}`` where each row is
 ``{label, kind, mean, std, min, max, n, beats_greedy_beam, per_seed}``.
 ``beats_greedy_beam`` (rl rows only) counts seeds where ``policy_return`` exceeds that
 run's own paired ``greedy_beam`` figure for the same seed.
+
+Run: ``python scripts/collect_results.py --runs-dir runs/marl``. Seconds -- it only reads
+and aggregates already-computed JSON, no environment steps.
 """
 
 import argparse
@@ -63,8 +66,8 @@ RUN_INFO = {
     "ev500_mappo_a": ("events500", "MAPPO, credit_mix 0.5, 16 envs (Runpod A40)"),
 }
 
-# ippo_v3 also appears in DECISIONS.md (slot-0 head, credit_mix 0.5) but is superseded by
-# ippo_v4/v5 in the caller's mapping above and is intentionally not duplicated here.
+# ippo_v3 (slot-0 head, credit_mix 0.5, DECISIONS.md issue 23) is left out on purpose:
+# ippo_v4 and ippo_v5 above supersede it.
 
 
 def _round(x):

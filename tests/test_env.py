@@ -391,6 +391,8 @@ def test_hotspots_must_fit() -> None:
 
 
 def test_structured_constellations() -> None:
+    """Walker planes share RAAN and altitude with even in-plane phase spacing; a train's
+    satellites keep a fixed time (hence distance) offset; an invalid plane count raises."""
     walker = SarSat(num_satellites=12, max_targets=5, planes=3)
     orbit = walker.reset(KEY)[0].orbit
     plane = np.arange(12) // 4

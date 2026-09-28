@@ -1,6 +1,7 @@
 """Tests for the seeded evaluator, its CSV logs and the HTML viewer."""
 
 import csv
+import math
 from pathlib import Path
 
 import numpy as np
@@ -56,12 +57,33 @@ def test_random_policy_runs() -> None:
     assert log.sensing.shape == (3, 2) and log.sensing.all()
 
 
+def _same_cell(fresh: str, shipped: str) -> bool:
+    """Equal text, or numbers equal to float32 noise.
+
+    CPU JAX builds on different platforms differ in the last float32 bits, which shows up
+    in the sixth printed digit, and as ~1e-5 on angles near zero. The tolerance (1e-4
+    degrees is ~11 m on the ground) is far below any change in behaviour.
+    """
+    if fresh == shipped:
+        return True
+    try:
+        return math.isclose(float(fresh), float(shipped), rel_tol=1e-5, abs_tol=1e-4)
+    except ValueError:
+        return False
+
+
 def test_shipped_example_csvs_are_reproducible(tmp_path: Path) -> None:
     """The examples must match a fresh run; if this fails, regenerate them."""
     example = Path(__file__).parents[1] / "examples" / "8sat-100tg-seed0"
     env = SarSat(num_satellites=8, max_targets=100, time_limit=180)
     for path in write_csv(run_episode(env, greedy_policy, seed=0), tmp_path):
-        assert path.read_text() == (example / path.name).read_text(), (
+        fresh = [cell for row in csv.reader(path.read_text().splitlines()) for cell in row]
+        shipped_text = (example / path.name).read_text().splitlines()
+        shipped = [cell for row in csv.reader(shipped_text) for cell in row]
+        same = len(fresh) == len(shipped) and all(
+            _same_cell(a, b) for a, b in zip(fresh, shipped, strict=True)
+        )
+        assert same, (
             f"{path.name} differs from examples/8sat-100tg-seed0 — regenerate it "
             "(see examples/README.md)"
         )

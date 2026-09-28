@@ -1,4 +1,8 @@
-"""Throughput benchmark. Run: ``python scripts/benchmark.py``"""
+"""Throughput benchmark for the plain :class:`sarsat.SarSat` step, at three constellation
+sizes (8, 64 and 1000 satellites). Prints env-steps/s and agent-steps/s to stdout; reads
+and writes nothing else. Run: ``python scripts/benchmark.py``. A few seconds on GPU; the
+first call at each size pays JIT compilation before the timed run starts.
+"""
 
 import time
 

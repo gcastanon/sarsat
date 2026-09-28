@@ -178,6 +178,10 @@ class CoopSarSat(SarSat):
         return access if mask is None else access & mask[:, None, :]
 
     def assemble(self, base: State, access: jax.Array) -> CoopState:
+        """A :class:`CoopState` from a base state and its cluster-access schedule: derive
+        ``team_future`` from ``access`` and zero the geometry cache (:meth:`refresh` fills
+        it). Also used by ``sarsat.live`` to splice a rolling world's next episode
+        together from a freshly sampled base and a schedule built a few rows at a time."""
         total = self.schedule_length
         # Accesses after the time limit are worth nothing to the team.
         counted = access & (jnp.arange(total) <= self.time_limit)[:, None, None]
@@ -201,6 +205,7 @@ class CoopSarSat(SarSat):
     def reset(
         self, key: jax.Array, num_targets: Optional[Union[int, jax.Array]] = None
     ) -> Tuple[CoopState, TimeStep[CoopObservation]]:
+        """Start an episode: :meth:`reset_state` plus the geometry cache and observation."""
         state = self.refresh(self.reset_state(key, num_targets))
         return state, restart(self.observe(state), shape=(self.num_agents,))
 
@@ -254,6 +259,8 @@ class CoopSarSat(SarSat):
     def step(
         self, state: CoopState, action: jax.Array
     ) -> Tuple[CoopState, TimeStep[CoopObservation]]:
+        """Advance one time step, then point, sense, score and recharge, as
+        :meth:`SarSat.step` does; the discount and step type follow from that transition."""
         state, reward, all_imaged = self.transition(state, action)
         last = all_imaged | (state.step >= self.time_limit)
         return self.make_timestep(state, reward, all_imaged, last)
@@ -301,6 +308,8 @@ class CoopSarSat(SarSat):
         return jnp.stack(index), jnp.stack(value), jnp.stack(scarce)
 
     def observe(self, state: CoopState) -> CoopObservation:
+        """Build the ``CoopObservation`` described in the module docstring: ranked beam
+        slots, the cluster look-ahead, own status, and the team summary for the critic."""
         n, k = self.num_agents, self.num_slots
         t1 = state.step + 1
         priority = state.target_priority

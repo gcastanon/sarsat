@@ -7,6 +7,15 @@ runtime dependencies (no fetch, no external CSS/JS/fonts). 12 slides (100-agent 
 200-agent + 500-agent summary/gap) plus a 13th 500-agent "best approach" slide once
 events500 has a trained RL row.
 
+Layout, top to bottom: data helpers (load/format results); reusable HTML fragments
+(results/sweep tables, the generic slide wrapper, bullet/column lists); the architecture
+diagram (pure CSS boxes and arrows, shared by the 100- and 500-agent architecture slides);
+slide content builders, one function per slide type; ``main``, which reads
+reports/results.json and calls those builders in order to assemble the slide list; and
+last the document shell (module-level ``CSS`` and ``JS`` strings plus ``render_document``,
+which wraps the slides in one HTML page with prev/next controls). Runs in well under a
+second; no GPU involved.
+
 Run: python scripts/build_deck.py
 """
 
