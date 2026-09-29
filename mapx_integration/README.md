@@ -8,11 +8,20 @@ MAPX checkout, so no MAPX file is edited by hand.
 
 ## 1. Setup
 
+MAPX needs Python 3.12. Its repository is private: ask its owner for access.
+
 ```bash
 git clone git@github.com:Chulabhaya/mapx.git ~/marl/mapx
-python -m venv ~/marl/.venv && source ~/marl/.venv/bin/activate
-pip install -U "jax[cuda12]" && pip install -e ~/marl/mapx -e /path/to/sarsat
+uv venv ~/marl/.venv --python 3.12 && source ~/marl/.venv/bin/activate
+uv pip install "jax[cuda12]==0.11.2" flax==0.12.9 optax==0.2.8 chex==0.1.92 jumanji==1.1.2 \
+  hydra-core==1.4.0.dev10 omegaconf==2.4.0.dev15 orbax-checkpoint==0.12.4 \
+  tfp-nightly==0.26.0.dev20260921 numpy==2.5.3 absl-py==2.5.0 colorama==0.4.6
+uv pip install -e ~/marl/mapx -e /path/to/sarsat
 ```
+
+This is the known-good version set of the Runpod runs (every run used JAX 0.11.2); plain
+`pip` works too. For a rented GPU (Runpod), `CLAUDE.md` has the same setup with the paths used
+there, plus measured throughput and cost.
 
 | Variable | Default | Meaning |
 |---|---|---|
@@ -38,14 +47,16 @@ reached the results below; anything after the scenario is a Hydra override.
 | Schedule | 1500 updates, evaluation every 30, learning-rate decay, gamma 0.995 |
 | Checkpoint | the best 32-episode evaluation is kept under `checkpoints/` |
 
-Scenarios: `sarsat-100sat-hotspots`, `sarsat-200sat-events`, `sarsat-500sat-events` (500
-satellites, 20,000 targets, DECISIONS.md issues 26-27; its 4-environment default is a
-guess at the WSL2 allocation cap, and the one trained run used `arch.num_envs=16` on a 48 GB
-Runpod GPU, see `CLAUDE.md`), `sarsat-500sat-announced` (the same field with every
-request windowed and announced at random at least 30 minutes ahead, issue 30; the run plan
-is `campaign_plan_ann500.json`), `sarsat-100sat-pairs`, and
-the plain `sarsat-{8sat-100tg,64sat-1000tg,1000sat-1000tg}`. `run.sh` is the same launcher
-without the recipe, for raw overrides. Follow a run with:
+| Scenario (`mapx/configs/env/scenario/`) | Use |
+|---|---|
+| `sarsat-100sat-hotspots` | benchmark, DECISIONS.md issues 22-23 |
+| `sarsat-200sat-events` | benchmark with time-windowed events, issues 24-25 |
+| `sarsat-500sat-events` | largest benchmark, issues 26-27. `launch.sh` defaults to 4 environments, a guess at the WSL2 allocation cap; the trained run used `arch.num_envs=16` on a 48 GB GPU (~35 GB used) |
+| `sarsat-500sat-announced` | the 500-satellite field with every request windowed and announced at random at least 30 minutes ahead, issue 30; not trained yet, the run plan is `campaign_plan_ann500.json` |
+| `sarsat-100sat-pairs` | 50 formation pairs 3 s apart: a coordination stress test, not a realistic constellation (issue 22) |
+| `sarsat-8sat-100tg`, `sarsat-64sat-1000tg`, `sarsat-1000sat-1000tg` | plain uniform targets, for smoke tests and scaling |
+
+`run.sh` is the same launcher without the recipe, for raw overrides. Follow a run with:
 
 ```bash
 ./watch_runs.sh ippo_v1            # one line per new evaluation, flags crashes and OOMs

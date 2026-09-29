@@ -1,104 +1,89 @@
-# Status — read this first in a new chat
+# Status
 
-_Last updated: 2026-09-28 (issue 30). Keep this file short and current; history lives in git and
-the reasoning lives in DECISIONS.md._
+_Last updated: 2026-09-29 (issue 30). Read this first when picking the project up. Keep it
+short and current: history lives in git, reasoning in DECISIONS.md, results in README.md._
 
 ## Where things live
 
 | What | Where | Notes |
 |---|---|---|
-| Source of truth | this git repository | clone it at the start of a chat, push at the end |
-| Design rationale | `DECISIONS.md` (issues 1-28) | append an issue for any non-obvious choice |
+| Source of truth | this git repository | pull at the start of a session, push at the end |
+| Overview and results | `README.md` | quick start, scenarios, the results table |
+| Design rationale | `DECISIONS.md` (issues 1-30) | append an issue for any non-obvious choice |
 | Codebase guide | `docs/index.html` | code map, data flow, experiment / training / evaluation walkthrough; update it when those change |
 | Deferred ideas | `IMPROVEMENTS.md` | move an item out when it is built |
-| MAPX integration | `mapx_integration/` | drop-in files for the MAPX repo, see its README |
-| Live demo | `sarsat/live.py` here; server, UI, NL parser in [sarsat-live](https://github.com/gcastanon/sarsat-live) | rolling episodes stay here (tested); the demo pins `sarsat>=0.2.0` (issue 29) |
-| Claude Project knowledge | mirrors of the three docs above + this file | search only; not the source of truth |
+| Training | `mapx_integration/` | overlay files for a MAPX checkout, launch and evaluation scripts; see its README |
+| Live demo | `sarsat/live.py` here; server, web UI and NL parser in [sarsat-live](https://github.com/gcastanon/sarsat-live) | rolling episodes stay here (tested); the demo pins a sarsat release (issue 29) |
+| Rented-GPU workflow | `CLAUDE.md` | Runpod setup, pinned versions, measured throughput and cost |
+| Claude Project knowledge | copies of the docs above | search only; not the source of truth |
 
 ## Current state
 
-* `sarsat` is a Jumanji-style JAX environment: circular LEO orbits, side-looking SAR
-  access (two-sided 20-45 degree incidence band, +-25 degree squint, nadir hole),
-  4 x 4 degree beam, battery duty cycle, shared team reward.
-* Action `[incidence, squint, side, sense]` (hybrid: 2 continuous + 2 binary);
-  `side_switch=False` gives the older signed 3-slot form for comparison.
-* Tests pass (`pytest -q`), lint clean (`ruff check . && ruff format --check .`).
-* Greedy baseline, 8 satellites / 100 targets / 180 steps: 0.52-0.54. Random: 0.009.
-* Cooperative benchmark: `hotspots=40, planes=10` at 100 satellites -- coordination is
-  worth ~10% over the best independent policy; formation pairs ~40%
-  (`scripts/cooperation_gap.py`, DECISIONS issue 22).
-* `sarsat.coop.CoopSarSat` gives a MARL learner a beam-value / look-ahead observation and
-  a compact ~133-number global state (vs the 9,600 the plain wrapper's joint observation
-  would need at 100 satellites); `mapx_integration/train_sarsat.py` trains `rec_ippo` /
-  `rec_mappo` on it with an anchored actor. On seeds 1000-1015 (`greedy_beam` 0.786,
-  `coop_plan` 0.904): pure team reward, `rec_mappo` 0.847 (16/16 over `greedy_beam`; IPPO
-  stalls at ~0.74); with `+env.credit_mix=0.5` both IPPO and MAPPO reach 0.89-0.90, best
-  0.898 with the slot-mixture head (`SARSAT_HEAD=mixture`). DECISIONS issue 23.
-* `sarsat.windows` adds time-windowed targets on top of the existing classes; the
-  `sarsat-200sat-events` scenario (events over a persistent background, 10% duty cycle)
-  gives coop_plan +49-56% over greedy_beam with solo_plan and coop_dedup gaining next
-  to nothing (seeds 1000-1015: 0.440 / 0.450 / 0.453 / 0.670; DECISIONS issue 24). Learners reach 0.649 vs coop_plan 0.670 and greedy_beam 0.440 (issue 25).
-* `sarsat-500sat-events` (issue 26): 500 satellites in 50 Walker planes, 100 event
-  clusters over 15,000 background targets, 5% duty cycle. Seeds 1000-1015: `greedy_beam`
-  0.394, `coop_dedup` 0.432, `solo_plan` 0.658, `coop_plan` 0.883, each ahead on 16/16
-  seeds -- the first benchmark where temporal planning *and* cooperation both pay.
-  Cooperation without planning (`coop_dedup`) buys only +10%; they compound. MAPPO (`ev500_mappo_a`,
-  16 envs on a Runpod A40, 2.4 h, $1.19) reaches 0.868, 98% of `coop_plan`, beating both
-  independent references on 16/16 seeds (issue 27). Runpod workflow: `CLAUDE.md`. Reference-policy evaluation at
-  this size uses `sarsat.reference.lean_precompute` (~4 GB) and ran in a Windows-side
-  CPU venv (`.venv`, git-ignored) while the GPU was busy.
-* Live demo (issue 28): `sarsat.live.LiveWorld` runs the episodic env as rolling episodes
-  (orbits re-based, batteries carried, background respawned, fresh events) so the trained
-  actor runs forever; typed requests become 50-slot clusters with a <= 30-step window
-  (30/30 collected in the soak). The server (60x real time, 83 ms per 500-satellite step on
-  the Windows CPU), web UI and offline NL parser moved to the `sarsat-live` repository
-  (issue 29); it drives `LiveWorld` from a sarsat tag and reads the params snapshot from
-  this checkout's `runs/`. Environment-side changes for the demo are made here.
-* `sarsat-500sat-announced` (issue 30, `sarsat.announce`): the 500-satellite field with
-  every request windowed (events 10-30 steps, background 30-90) and announced at a random
-  step at least 30 minutes before its window opens; the cooperative observation, actor and
-  critic alike, uses nothing about a request before its announcement. Seeds 1000-1015:
-  `greedy_beam` 0.372, `coop_dedup` 0.397, `solo_plan` 0.645, `coop_plan` 0.792, the
-  last two clairvoyant (they see every window at the reset); each gap holds on 16/16
-  seeds. **MAPPO not trained yet**: planned as `ann500_mappo_a`
-  (`mapx_integration/campaign_plan_ann500.json`: one A40, ~3.6 h, ~$1.76, cap 7 h), to be
-  launched from the PC, which holds SSH, MAPX and the spending ledger.
-* Results deck: `reports/sarsat_marl_results.html` (built by `scripts/collect_results.py`
-  + `scripts/build_deck.py` from `reports/results.json`).
-* `python -m sarsat.evaluate` writes CSV logs and a self-contained HTML map viewer;
-  `examples/8sat-100tg-seed0/` holds one reproducible run and a test guards it.
+* **Environment.** `sarsat.SarSat` is a Jumanji-style JAX environment: circular LEO orbits,
+  two-sided SAR access (20-45 degree incidence, +-25 degree squint, nadir hole), a 4 x 4
+  degree beam, a battery duty cycle and a shared team reward. `CoopSarSat` (issue 23) adds
+  the observation and compact global state the learners train on; `sarsat.windows` adds
+  time-windowed event targets (issue 24); `sarsat.announce` reveals each request at a random
+  time before its window opens (issue 30).
+* **Benchmarks.** `sarsat-100sat-hotspots` (issue 22), `sarsat-200sat-events` (issue 24)
+  and `sarsat-500sat-events` (issue 26, where both planning ahead and cooperating pay).
+  Reference policies in `sarsat.reference`; at 500 satellites they need
+  `lean_precompute` (~4 GB of tables).
+* **Learners.** MAPX `rec_mappo` / `rec_ippo` with the `launch.sh` recipe (slot-mixture
+  head, `credit_mix=0.5`) reach 97-99% of the centralised planner `coop_plan` on all three
+  benchmarks and beat every independent reference on 16/16 test seeds (issues 23, 25, 27;
+  numbers in README.md). The 500-satellite run trained on a rented A40 in 2.4 h for $1.19.
+* **Announced requests** (issue 30). `sarsat-500sat-announced` is the 500-satellite field
+  with every request windowed (events 10-30 steps, background 30-90) and announced at least
+  30 minutes ahead; the observation, actor and critic alike, uses nothing about a request
+  before then. References on seeds 1000-1015: `greedy_beam` 0.372, `coop_dedup` 0.397,
+  `solo_plan` 0.645, `coop_plan` 0.792 (the last two clairvoyant). **No learner trained
+  yet**: the planned run is `ann500_mappo_a` (`mapx_integration/campaign_plan_ann500.json`:
+  one A40, ~3.6 h, ~$1.76, cap 7 h), launched from the PC, which holds SSH, MAPX and the
+  spending ledger.
+* **Live demo** (issues 28-29). `sarsat.live.LiveWorld` turns the episodic environment
+  into a world that never ends; typed requests become time-windowed target clusters. The
+  server (60x real time, 83 ms per 500-satellite step on a Windows CPU), web UI and
+  offline NL parser live in the `sarsat-live` repository, which drives `LiveWorld` from a
+  sarsat release and reads the parameter snapshot from this checkout's `runs/`.
+  Environment-side changes for the demo are made here.
+* **Tooling.** `python -m sarsat.evaluate` writes CSV logs and a self-contained HTML map
+  viewer; `examples/` holds recorded episodes. The results deck
+  `reports/sarsat_marl_results.html` is built by `scripts/collect_results.py` +
+  `scripts/build_deck.py` from `reports/results.json`.
+* **Checks.** `pytest -q` passes (`mapx_integration/tests/` run inside a MAPX checkout);
+  `ruff check .` and `ruff format --check .` are clean.
 
 ## Working conventions
 
-1. Start: `git clone`, `pip install -e ".[dev]"`, `pytest -q`. Read `DECISIONS.md`.
+1. Start: pull, `pip install -e ".[dev]"`, `pytest -q`. Skim `DECISIONS.md`.
 2. Any behavioural change: update or add a DECISIONS issue, regenerate
    `examples/8sat-100tg-seed0/` (the command is in `examples/README.md`), refresh the
-   baseline numbers in `README.md`, rerun the suite.
-3. End: commit with a message that says *why*, push, and update this file.
-4. Release: bump `version` in `pyproject.toml` and `__version__` in `sarsat/__init__.py` in
+   numbers in `README.md`, rerun the suite.
+3. Keep new environment features back-compatible: add a subclass or a flag (as
+   `sarsat/windows.py` does) rather than change existing observation layouts, so trained
+   checkpoints keep loading.
+4. End: commit with a message that says *why*, push, and update this file.
+5. Release: bump `version` in `pyproject.toml` and `__version__` in `sarsat/__init__.py` in
    a PR; on merge `.github/workflows/tag-release.yml` tags the commit `vX.Y.Z` (Claude
    sessions cannot push tags themselves). Raise `sarsat-live`'s `sarsat>=` pin with it.
 
 ## Open questions
 
-* Does MAPPO still reach `coop_plan`'s neighbourhood when requests are announced over time
-  (issue 30)? Launch `ann500_mappo_a` and replay it on seeds 1000-1015.
-
-* Side switch vs signed encoding: no training evidence yet (DECISIONS issue 21).
-* Can a MARL learner actually capture the ~10% cooperation gap on the hotspot scenario?
-  Yes, to within ~0.006 of `coop_plan`, but only once each satellite's own share of the
-  team reward is mixed in (`credit_mix`); with the literally shared reward MAPPO gets a bit
-  over half way. One training seed per configuration -- replicate before relying on it.
-  What is left is same-step duplication and unspent end-of-episode battery (issue 23).
-* Does a much larger batch (no WSL2 4 GB allocation cap) make `credit_mix` unnecessary?
-* Look-side switching is free; a roll cost or per-pass side is the next realism step.
-* Reward is flat across the incidence band; incidence-dependent quality is a one-liner
-  in `step` if wanted.
-* MAPX proper (Python >= 3.12, JAX >= 0.11) has not been run against the wrapper; only
-  a faithful stub of its common wrappers has.
-* The trained policy ends episodes at ~8% charge at the 5% duty cycle, so a continuous
-  world with battery carry-over loses ~4% per episode against the offline number (issue
-  28); a random-initial-charge training would fix it.
-* NL tasking measured (sarsat-live README): rules + GeoNames gazetteer 100% on hand-written
-  phrases, 96.7% synthetic (residual: homonyms); the local Qwen2.5-1.5B model is only the
-  fallback for places the sentence does not name.
+* **Announced requests.** Does MAPPO still get close to `coop_plan` when requests are
+  revealed over time (issue 30)? Launch `ann500_mappo_a` and replay it on seeds 1000-1015.
+* **Replication.** Most recipes have one training seed; the hotspot recipe has three
+  (0.894-0.898). Replicate before relying on a small difference.
+* **`credit_mix`.** Pure team reward gets MAPPO only a bit over half way from
+  `greedy_beam` to `coop_plan` at 100 satellites; blending in each satellite's own share
+  closes it (issue 23). Would a much larger batch make it unnecessary?
+* **Battery at episode end.** The trained 500-satellite policy ends episodes at ~8%
+  charge, so the continuous live world loses ~4% per episode against the offline score
+  (issue 28). Training from a random initial charge should fix it.
+* **Side switch vs signed action encoding.** No training evidence either way (issue 21).
+* **Realism next steps.** Look-side switching is free (a roll cost or per-pass side
+  would be more honest); reward is flat across the incidence band. Both are listed in
+  `IMPROVEMENTS.md`.
+* **NL tasking.** Rules + gazetteer score 100% on hand-written phrases and 96.7% on a
+  synthetic set, where every miss is a homonym (Birmingham UK vs Alabama); details in the
+  `sarsat-live` README.

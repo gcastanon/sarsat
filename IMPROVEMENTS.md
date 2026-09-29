@@ -8,8 +8,8 @@ the DECISIONS issue that builds it.
 Already built, for reference: Walker-style planes (`sample_planes`, issue 22),
 time-windowed event targets (`sarsat/windows.py`, issue 24), a compact global state for
 centralised critics (`CoopSarSat`, issue 23), per-satellite credit assignment
-(`credit_mix`, issue 23), trained-policy evaluation (`mapx_integration/eval_checkpoint.py`,
-`live/policy.py`) and GPU throughput measurements (issues 23 and 27).
+(`credit_mix`, issue 23), trained-policy evaluation (`mapx_integration/eval_checkpoint.py`)
+and GPU throughput measurements (issues 23 and 27).
 
 ## Orbital mechanics (issue 2)
 * **J2 nodal precession.** Adds a constant rate to the node angle - a one-line change in
@@ -90,6 +90,6 @@ centralised critics (`CoopSarSat`, issue 23), per-satellite credit assignment
   satellite x 180 step file from tens of MB to a few.
 * **Viewer projections and detail.** Equirectangular only, 1-degree coastlines, no zoom.
   A globe or a zoomable tile map would need an external library.
-* **Parameter snapshot tool.** `live/policy.py` loads a 5 MB msgpack snapshot of the
-  actor, which was extracted from a MAPX checkpoint on the training host by a short orbax
-  script that is not in this repository.
+* **Parameter snapshot tool.** The live demo (`sarsat-live`) loads a 5 MB msgpack snapshot
+  of the actor, which was extracted from a MAPX checkpoint on the training host by a short
+  orbax script that is not in this repository.
