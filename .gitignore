@@ -7,3 +7,6 @@ runs/
 build/
 dist/
 .venv/
+
+# per-user Claude Code settings
+.claude/settings.local.json

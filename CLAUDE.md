@@ -2,6 +2,20 @@
 
 Start with STATUS.md; design rationale is in DECISIONS.md, training in mapx_integration/README.md.
 
+## Sibling repository: sarsat-live
+- The live demo (server, web UI, snapshot loader, offline NL parser, tasking data sets) is
+  `../sarsat-live` (https://github.com/gcastanon/sarsat-live), with its own CLAUDE.md. It drives
+  `sarsat.live.LiveWorld`, reads params snapshots from this checkout's `runs/`, and pins
+  `sarsat>=` a release of this repo; its `scripts/` import `scripts/baseline_seeds.py` from here.
+- Environment-side changes, `LiveWorld` included, belong here with a DECISIONS issue. When the
+  demo needs them, release (bump the version, see STATUS.md) so sarsat-live can raise its pin.
+- Don't rename or remove names sarsat-live imports without updating it in the same change:
+  `sarsat.live` (`LiveWorld`, `Request`, `StepResult`, `MAX_DEADLINE_STEPS`), `sarsat.windows`
+  (`WindowedSarSat`, `WindowedCoopSarSat`, `WindowedState`), `sarsat.targets`
+  (`TargetSampler`, `latlon_to_unit_vector`), `sarsat.orbits.EARTH_RADIUS_KM`,
+  `sarsat.evaluate.run_episode`, and `scripts/baseline_seeds.py`'s `build_env`, `run`,
+  `ALL_POLICIES`. Grep `../sarsat-live` before renaming anything public.
+
 ## Runpod
 - Framework: JAX (GPU; the satellite-target geometry runs on the GPU, so runs are GPU-bound, not CPU-bound). Python 3.12.
 - Setup: ship this repo and a MAPX checkout (git@github.com:Chulabhaya/mapx.git is private: tar `~/marl/mapx` from WSL, excluding `.git`) to `/workspace/{sarsat,mapx}`, then
