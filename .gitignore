@@ -10,3 +10,4 @@ dist/
 
 # per-user Claude Code settings
 .claude/settings.local.json
+CODE_VERSION

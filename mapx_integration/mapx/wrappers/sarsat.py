@@ -6,8 +6,9 @@
 SarSat already speaks the Jumanji API with MAPX's observation field names, so this
 wrapper only (1) re-types observations as ``mapx.types`` tuples, optionally adding a
 global state, (2) declares the action as hybrid -- two continuous pointing slots
-(incidence, squint) followed by binary switches for the look side (when the environment
-has ``side_switch`` on) and for sensing -- so MAPX selects ``HybridActionHead``, and
+(incidence, squint) followed by a binary switch for the look side (when the environment
+has ``side_switch`` on) and the look slot, categorical over no look or one of the
+environment's collection modes -- so MAPX selects ``HybridActionHead``, and
 (3) adds the ``env_metrics`` extras entry the learners expect.
 
 ``make_sarsat_envs`` is a MAPX ``EnvFactory``; see ``mapx_integration/README.md`` for the
@@ -33,6 +34,7 @@ from mapx.types import (
 from omegaconf import DictConfig, OmegaConf
 
 from sarsat import SarSat, State
+from sarsat.quality import QualitySarSat
 
 
 class SarSatWrapper(Wrapper):
@@ -86,10 +88,16 @@ class SarSatWrapper(Wrapper):
     @cached_property
     def action_spec(self) -> HybridArray:
         env_spec = self._env.action_spec
-        # Two continuous pointing slots, then one binary categorical block per switch:
-        # ``[incidence, squint, side, sense]`` or ``[cross-track, squint, sense]``.
-        switches = self._env.action_dim - 2
-        blocks = (ActionBlock(size=2), *([ActionBlock(size=1, num_categories=2)] * switches))
+        # Two continuous pointing slots, a binary side switch when there is one, and the
+        # look slot: ``[incidence, squint, side, look]`` or ``[cross-track, squint, look]``.
+        # The look has ``num_modes + 1`` categories (no look, or one mode); with the
+        # default single mode it is the binary sense switch.
+        sides = self._env.action_dim - 3
+        blocks = (
+            ActionBlock(size=2),
+            *([ActionBlock(size=1, num_categories=2)] * sides),
+            ActionBlock(size=1, num_categories=self._env.num_modes + 1),
+        )
         return HybridArray(
             shape=env_spec.shape,
             dtype=env_spec.dtype,
@@ -104,7 +112,11 @@ def make_sarsat_envs(config: DictConfig, add_global_state: bool = False) -> Tupl
     """MAPX ``EnvFactory``: build raw train / eval environments from a Hydra config."""
     kwargs = OmegaConf.to_container(config.env.get("kwargs", {}), resolve=True)
     kwargs |= OmegaConf.to_container(config.env.scenario.task_config, resolve=True)
+    # Targets with image-quality requirements (sarsat.quality) when the scenario sets any.
+    env_cls = SarSat
+    if any(k.endswith("_quality") for k in kwargs):
+        env_cls = QualitySarSat
     return (
-        SarSatWrapper(SarSat(**kwargs), add_global_state),
-        SarSatWrapper(SarSat(**kwargs), add_global_state),
+        SarSatWrapper(env_cls(**kwargs), add_global_state),
+        SarSatWrapper(env_cls(**kwargs), add_global_state),
     )

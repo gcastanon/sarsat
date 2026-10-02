@@ -121,14 +121,19 @@ class AnchoredRecurrentActor(nn.Module):
 
 
 class SlotMixtureDistribution:
-    """Policy over ``[incidence, squint, side, sense]`` that first picks one of the ranked
+    """Policy over ``[incidence, squint, side, look]`` that first picks one of the ranked
     beam slots (a latent choice, marginalised in ``log_prob``), then aims near it.
 
     Component ``k`` is a tanh-Gaussian around slot ``k``'s pointing times a Bernoulli that
-    leans to slot ``k``'s side; sensing is an independent Bernoulli. The action vector and
-    the environment are untouched: the mixture only gives the policy a way to say "take the
-    second-best beam" (e.g. because a teammate will take the best) without having to learn
-    a large pointing offset.
+    leans to slot ``k``'s side; whether to look is an independent Bernoulli. The action
+    vector and the environment are untouched: the mixture only gives the policy a way to
+    say "take the second-best beam" (e.g. because a teammate will take the best) without
+    having to learn a large pointing offset.
+
+    With collection modes (DECISIONS.md issue 33) a slot is a target *and* a mode, so a look
+    is made in the chosen slot's mode: the look slot holds ``slot_mode[k]`` (``1..modes``)
+    or ``0``. ``log_prob`` then sums only over the slots whose mode matches the look. With
+    one mode every slot's mode is ``1`` and this is the binary sense flag exactly.
     """
 
     def __init__(
@@ -138,6 +143,7 @@ class SlotMixtureDistribution:
         scale: jax.Array,  # (2,) or broadcastable to loc
         side_logits: jax.Array,  # (..., K) logit of looking right
         sense_logits: jax.Array,  # (..., 2), already masked
+        slot_mode: jax.Array = None,  # (..., K) int look value of each slot; None: all 1
     ) -> None:
         self._mix = tfd.Categorical(logits=mix_logits)
         self._mix_logp = jax.nn.log_softmax(mix_logits, axis=-1)
@@ -148,6 +154,9 @@ class SlotMixtureDistribution:
         )
         self._side_logits = side_logits
         self._sense = tfd.Categorical(logits=sense_logits)
+        self._slot_mode = (
+            jnp.ones(mix_logits.shape, jnp.int32) if slot_mode is None else slot_mode
+        )
 
     def _pick(self, values: jax.Array, k: jax.Array) -> jax.Array:
         index = k.reshape(*k.shape, *([1] * (values.ndim - k.ndim)))
@@ -160,17 +169,21 @@ class SlotMixtureDistribution:
         noise = jax.random.normal(k_point, loc.shape) * self._scale
         pointing = jnp.clip(jnp.tanh(loc + noise), -0.999999, 0.999999)
         side = jax.random.bernoulli(k_side, jax.nn.sigmoid(self._pick(self._side_logits, k)))
-        sense = self._sense.sample(seed=k_sense)
+        look = self._sense.sample(seed=k_sense) * self._pick(self._slot_mode, k)
         return jnp.concatenate(
-            [pointing, side[..., None].astype(loc.dtype), sense[..., None].astype(loc.dtype)], -1
+            [pointing, side[..., None].astype(loc.dtype), look[..., None].astype(loc.dtype)], -1
         )
 
     def log_prob(self, event: jax.Array) -> jax.Array:
         pointing = self._pointing.log_prob(event[..., None, 0:2])  # (..., K)
         right = event[..., 2:3] > 0.5
         side = -jax.nn.softplus(jnp.where(right, -self._side_logits, self._side_logits))
-        mixture = jax.nn.logsumexp(self._mix_logp + pointing + side, axis=-1)
-        sense = jnp.clip(jnp.round(event[..., 3]), 0, 1).astype(jnp.int32)
+        look = jnp.round(event[..., 3]).astype(jnp.int32)
+        # A look in mode m can only have come from a slot of mode m (no look: from any).
+        match = (look[..., None] == 0) | (self._slot_mode == look[..., None])
+        joint = jnp.where(match, self._mix_logp + pointing + side, -1e30)
+        mixture = jax.nn.logsumexp(joint, axis=-1)
+        sense = jnp.clip(look, 0, 1)
         return mixture + self._sense.log_prob(sense)
 
     def entropy(self, seed: jax.Array = None) -> jax.Array:
@@ -182,9 +195,9 @@ class SlotMixtureDistribution:
         k = jnp.argmax(self._mix_logp, axis=-1)
         loc = self._pick(self._loc, k)
         side = self._pick(self._side_logits, k) > 0.0
-        sense = self._sense.mode()
+        look = self._sense.mode() * self._pick(self._slot_mode, k)
         return jnp.concatenate(
-            [jnp.tanh(loc), side[..., None].astype(loc.dtype), sense[..., None].astype(loc.dtype)],
+            [jnp.tanh(loc), side[..., None].astype(loc.dtype), look[..., None].astype(loc.dtype)],
             -1,
         )
 
@@ -226,7 +239,13 @@ class SlotMixtureHead(nn.Module):
         sense = nn.Dense(2, kernel_init=orthogonal(0.01))(embedding)
         keep = action_mask[..., 3:4].astype(bool) | (jnp.arange(2) == 0)
         sense = jnp.where(keep, sense, jnp.finfo(jnp.float32).min)
-        return SlotMixtureDistribution(mix, loc, scale, side, sense)
+        # With collection modes each slot ends with a one-hot of its mode (CoopSarSat, issue
+        # 33); a look is made in the chosen slot's mode. An empty slot falls back to mode 1.
+        num_modes = list(self.layout.categorical_blocks)[-1][1] - 1
+        slot_mode = None
+        if num_modes > 1:
+            slot_mode = jnp.argmax(slots[..., -num_modes:], axis=-1).astype(jnp.int32) + 1
+        return SlotMixtureDistribution(mix, loc, scale, side, sense, slot_mode)
 
 
 class SlotMixtureActor(nn.Module):

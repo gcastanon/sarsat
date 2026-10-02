@@ -21,12 +21,20 @@ to roughly ``[0, 1]`` (pointing features to ``[-1, 1]``, the action's own encodi
   satellite will have access to at each of the next ``horizon`` steps.
 * ``(battery, can_sense, time_remaining, visible_value, visible_count)``.
 
+With collection modes (``modes`` given, DECISIONS.md issue 33) a beam is a target to aim at
+*and* a mode to look in: the suppression runs over every (candidate, mode) pair, each mode
+with its own footprint, incidence band, squint limit and quality, and a mode the battery
+cannot pay for offers no beam. Beams are ranked by value per unit of battery (the gain
+times the cheapest mode's cost over this mode's), so with one mode the ranking is the
+plain one. Each slot ends with a one-hot of its mode, so a slot's pointing followed by its
+mode is the look that captures its ``value``. Without ``modes`` the layout is unchanged.
+
 ``global_state`` is the agent's own view followed by a fixed-size team summary (battery
 statistics, remaining value, the sorted remaining cluster fractions, the team's summed
 look-ahead), so a centralised critic stays small whatever the constellation size.
 """
 
-from functools import cached_property
+from functools import cached_property, partial
 from typing import NamedTuple, Optional, Tuple, Union
 
 import jax
@@ -38,7 +46,6 @@ from sarsat.env import SarSat
 from sarsat.orbits import (
     EARTH_RADIUS_KM,
     az_el,
-    in_az_el_box,
     in_incidence_band,
     look_angle_band,
     satellite_frames,
@@ -97,6 +104,10 @@ class CoopSarSat(SarSat):
         self.num_slots = num_slots
         self.num_candidates = num_candidates
         self.horizon = horizon
+        # Slots gain a one-hot of their mode when modes are given (the base observation's
+        # per-mode flags follow the same rule). Set before ``SarSat.__init__`` sizes things.
+        modes = kwargs.get("modes")
+        self.slot_dim = type(self).slot_dim + (0 if modes is None else len(modes))
         super().__init__(*args, **kwargs)
         if not self.side_switch:
             raise ValueError("CoopSarSat assumes the side_switch action encoding")
@@ -147,7 +158,8 @@ class CoopSarSat(SarSat):
         """``SarSat.reset`` without its observation: orbits, targets and a full battery."""
         return self._initial_state(key, num_targets)
 
-    # Extension points (sarsat.windows uses them); the defaults change nothing.
+    # Extension points (sarsat.windows uses them); the defaults change nothing. An instance's
+    # ``slot_dim`` adds its modes' one-hot to the class's.
     state_cls = CoopState
     slot_dim = SLOT_DIM
 
@@ -221,12 +233,8 @@ class CoopSarSat(SarSat):
     ) -> Tuple[CoopState, jax.Array, jax.Array, jax.Array]:
         """:meth:`transition` plus the ``(N,)`` share of the reward each satellite earned."""
         step = state.step + 1
-        # SarSat._apply_action on the cached geometry.
-        pointing = self._decode_pointing(state.orbit, action[:, : self._pointing_dim])
-        sensing = (action[:, self._pointing_dim] > 0.5) & self._can_sense(state.battery)
-        lower = (pointing - self._beam_half_width)[:, None, :]
-        upper = (pointing + self._beam_half_width)[:, None, :]
-        in_beam = state.visible & sensing[:, None] & in_az_el_box(state.body, lower, upper)
+        # SarSat.step on the cached geometry.
+        _, mode, sensing, in_beam = self.resolve_look(state, action, state.body, state.visible)
         imaged = jnp.any(in_beam, axis=0)
         reward = jnp.sum(jnp.where(imaged, state.target_priority, 0.0))
         # Who earned it: a target caught by several beams at once is split evenly. Sums to
@@ -235,9 +243,7 @@ class CoopSarSat(SarSat):
         credit = in_beam.astype(jnp.float32) @ share  # (N,)
         state = state._replace(
             step=step,
-            battery=jnp.clip(
-                state.battery + self.recharge_rate - self.sense_cost * sensing, 0.0, 1.0
-            ),
+            battery=self.next_battery(state.battery, mode, sensing),
             target_active=state.target_active & ~imaged,
         )
         return state, reward, ~jnp.any(state.target_active), credit
@@ -292,20 +298,61 @@ class CoopSarSat(SarSat):
             body, low[:, None], high[:, None], self._max_squint
         )
 
-    def _slots(self, hit: jax.Array, weight: jax.Array, scarce_weight: jax.Array):
+    def _slots(
+        self,
+        hit: jax.Array,
+        weight: jax.Array,
+        scarce_weight: jax.Array,
+        rank_scale: Optional[jax.Array] = None,
+    ):
         """Non-maximum suppression for one satellite: indices of the ``num_slots`` best
-        beams and the raw / scarcity-weighted priority each adds over the earlier ones."""
+        beams and the raw / scarcity-weighted priority each adds over the earlier ones.
+        ``hit`` is ``(beams, targets)``; ``rank_scale`` ``(beams,)``, if given, multiplies
+        each beam's gain for the ranking only (the reported values stay raw)."""
         covered = jnp.zeros(weight.shape, bool)
         hit_f = hit.astype(jnp.float32)
         index, value, scarce = [], [], []
         for _ in range(self.num_slots):
             gain = hit_f @ jnp.where(covered, 0.0, weight)
-            best = jnp.argmax(gain)
+            best = jnp.argmax(gain if rank_scale is None else gain * rank_scale)
             index.append(best)
             value.append(gain[best])
             scarce.append(jnp.sum(jnp.where(hit[best] & ~covered, scarce_weight, 0.0)))
             covered = covered | hit[best]
         return jnp.stack(index), jnp.stack(value), jnp.stack(scarce)
+
+    def _mode_beams(
+        self,
+        state,
+        cand: jax.Array,
+        cand_visible: jax.Array,
+        cand_body: jax.Array,
+        az: jax.Array,
+        el: jax.Array,
+    ) -> Tuple[jax.Array, jax.Array]:
+        """Every (mode, centre candidate) beam of every satellite: ``(N, K * C, C)`` which
+        candidates each would image, beams ordered mode-major, and the ``(K * C,)`` ranking
+        scale, the cheapest mode's cost over the beam's. A beam images what
+        :meth:`resolve_look` would: candidates in the mode's footprint, band, squint limit
+        and quality. It is centred on a candidate the mode serves, and empty when the
+        battery cannot pay for the mode."""
+        k_modes, c = self.num_modes, cand.shape[1]
+        serve = jnp.broadcast_to(cand_visible, (k_modes, *cand_visible.shape))  # (K, N, C)
+        if self._mode_bands_differ:
+            reach = [self._in_mode_band(state.orbit.radius, cand_body, k) for k in range(k_modes)]
+            serve = serve & jnp.stack(reach)
+        required = self._required_quality(state)
+        if required is not None:
+            serve = serve & (self._mode_quality[:, None, None] >= required[cand][None])
+        afford = self._can_afford(state.battery[None, :], jnp.arange(k_modes)[:, None])  # (K, N)
+        hw = self._mode_beam[:, None, None, None, :]  # (K, 1, 1, 1, 2)
+        box = (jnp.abs(az[:, :, None] - az[:, None, :]) <= hw[..., 0]) & (
+            jnp.abs(el[:, :, None] - el[:, None, :]) <= hw[..., 1]
+        )  # (K, N, C, C)
+        hit = box & serve[..., :, None] & serve[..., None, :] & afford[:, :, None, None]
+        hit = jnp.moveaxis(hit, 0, 1).reshape(self.num_agents, k_modes * c, c)
+        rank_scale = jnp.repeat(self.sense_cost / self._mode_cost, c)
+        return hit, rank_scale
 
     def observe(self, state: CoopState) -> CoopObservation:
         """Build the ``CoopObservation`` described in the module docstring: ranked beam
@@ -348,17 +395,24 @@ class CoopSarSat(SarSat):
         cand = jax.vmap(lambda row: jnp.searchsorted(row, wanted, side="left"))(count)
         cand = jnp.minimum(cand, self.max_targets - 1)  # fewer visible: padded, masked below
         cand_visible = wanted[None, :] <= count[:, -1:]  # (N, C)
-        az, el = az_el(jnp.take_along_axis(body, cand[:, :, None], axis=1))
+        cand_body = jnp.take_along_axis(body, cand[:, :, None], axis=1)
+        az, el = az_el(cand_body)
         weight = jnp.where(cand_visible, priority[cand], 0.0) / unit
-        hw = self._beam_half_width
-        hit = (
-            (jnp.abs(az[:, :, None] - az[:, None, :]) <= hw[0])
-            & (jnp.abs(el[:, :, None] - el[:, None, :]) <= hw[1])
-            & cand_visible[:, :, None]
-            & cand_visible[:, None, :]
-        )
-        slot, value, scarce = jax.vmap(self._slots)(hit, weight, weight * discount[cand])
+        if self._mode_flags:
+            hit, rank_scale = self._mode_beams(state, cand, cand_visible, cand_body, az, el)
+        else:
+            hw = self._beam_half_width
+            hit = (
+                (jnp.abs(az[:, :, None] - az[:, None, :]) <= hw[0])
+                & (jnp.abs(el[:, :, None] - el[:, None, :]) <= hw[1])
+                & cand_visible[:, :, None]
+                & cand_visible[:, None, :]
+            )
+            rank_scale = None
+        slots = partial(self._slots, rank_scale=rank_scale)
+        beam, value, scarce = jax.vmap(slots)(hit, weight, weight * discount[cand])
         valid = value > 0.0
+        slot = beam % self.num_candidates  # the centre candidate (beams are mode-major)
         slot_az = jnp.take_along_axis(az, slot, axis=1)
         slot_el = jnp.take_along_axis(el, slot, axis=1)
         pointing = self._encode_pointing(state.orbit, slot_az, slot_el)  # (N, K, 3)
@@ -380,6 +434,11 @@ class CoopSarSat(SarSat):
                 _squash(team_m[slot_target], 200.0)[..., None],
                 jnp.clip(others / 2.0, 0.0, 1.0)[..., None],
                 *self._extra_slot_features(state, slot_target, t1),
+                *(
+                    [jax.nn.one_hot(beam // self.num_candidates, self.num_modes)]
+                    if self._mode_flags
+                    else []
+                ),
             ],
             axis=-1,
         )

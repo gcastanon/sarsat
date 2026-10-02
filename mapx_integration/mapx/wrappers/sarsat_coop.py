@@ -38,6 +38,7 @@ from omegaconf import DictConfig, OmegaConf
 
 from sarsat.announce import AnnouncedCoopSarSat
 from sarsat.coop import CoopSarSat, CoopState
+from sarsat.quality import QualityCoopSarSat
 from sarsat.windows import WindowedCoopSarSat
 
 LAST_SLOT_DIM = CoopSarSat.slot_dim  # slot width of the most recently built env
@@ -147,7 +148,12 @@ class SarSatCoopWrapper(Wrapper):
     @cached_property
     def action_spec(self) -> HybridArray:
         env_spec = self._env.action_spec
-        blocks = (ActionBlock(size=2), *([ActionBlock(size=1, num_categories=2)] * 2))
+        # Pointing, the side switch, and the look: no look or one of the env's modes.
+        blocks = (
+            ActionBlock(size=2),
+            ActionBlock(size=1, num_categories=2),
+            ActionBlock(size=1, num_categories=self._env.num_modes + 1),
+        )
         return HybridArray(
             shape=env_spec.shape,
             dtype=env_spec.dtype,
@@ -194,15 +200,22 @@ def make_sarsat_coop_envs(
     # Time-windowed scenarios (sarsat.windows) widen each observation slot by one feature;
     # tell the networks, which are instantiated from this same config after the env.
     # Announced requests (sarsat.announce) keep the windowed layout and mask the rest.
+    # Quality requirements (sarsat.quality) use the mode-aware slots, whose width grows by
+    # one per collection mode, so the width is read off the built env.
     env_cls = CoopSarSat
     if "window_steps" in kwargs:
         env_cls = AnnouncedCoopSarSat if "announce_lead_s" in kwargs else WindowedCoopSarSat
+    if any(k.endswith("_quality") for k in kwargs):
+        if env_cls is not CoopSarSat:
+            raise NotImplementedError("quality requirements are not combined with windows")
+        env_cls = QualityCoopSarSat
+    train_env, eval_env = env_cls(**kwargs), env_cls(**kwargs)
     if "network" in config:
         for net in ("actor_network", "critic_network"):
-            config.network[net].pre_torso.slot_dim = env_cls.slot_dim
+            config.network[net].pre_torso.slot_dim = train_env.slot_dim
     global LAST_SLOT_DIM
-    LAST_SLOT_DIM = env_cls.slot_dim
+    LAST_SLOT_DIM = train_env.slot_dim
     return (
-        SarSatCoopWrapper(env_cls(**kwargs), add_global_state, scale, fused, credit_mix=mix),
-        SarSatCoopWrapper(env_cls(**kwargs), add_global_state, scale, fused_auto_reset=False),
+        SarSatCoopWrapper(train_env, add_global_state, scale, fused, credit_mix=mix),
+        SarSatCoopWrapper(eval_env, add_global_state, scale, fused_auto_reset=False),
     )

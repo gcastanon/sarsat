@@ -11,7 +11,7 @@ deliberately left out is listed in IMPROVEMENTS.md.
 """
 
 from functools import cached_property
-from typing import Optional, Tuple, Union
+from typing import Any, Mapping, Optional, Sequence, Tuple, Union
 
 import jax
 import jax.numpy as jnp
@@ -19,6 +19,7 @@ from jumanji import specs
 from jumanji.env import Environment
 from jumanji.types import StepType, TimeStep, restart
 
+from sarsat.modes import SensorMode, as_mode
 from sarsat.orbits import (
     EARTH_RADIUS_KM,
     az_el,
@@ -46,11 +47,19 @@ class SarSat(Environment[State, specs.BoundedArray, Observation]):
       outer edge of the accessible band (``incidence_deg``)
     * ``[1]`` squint command in ``[-1, 1]``, scaled to ``+-max_squint_deg``
     * ``[2]`` side: ``0`` looks left of the ground track, ``1`` looks right
-    * ``[3]`` sense flag: ``> 0.5`` requests imaging during this step
+    * ``[3]`` look: ``0`` takes no image this step, ``k`` images with collection mode
+      ``k - 1``. With the default single mode this is the sense flag, ``{0, 1}``.
 
     With ``side_switch=False`` the side is folded into the sign of the first slot
     (negative left, positive right, magnitude sweeping the band) and the action is
-    ``[cross-track, squint, sense]``. DECISIONS.md issue 21 compares the two.
+    ``[cross-track, squint, look]``. DECISIONS.md issue 21 compares the two.
+
+    **Collection modes** (``modes``, issue 31). Each :class:`sarsat.modes.SensorMode` has
+    its own battery cost, image quality, look duration (recorded, not simulated),
+    incidence band, squint limit and beam footprint. A satellite collects in at most one
+    mode per step, because the look slot names one. The pointing slots sweep the envelope
+    of all the modes' bands, so the same pointing aims at the same spot whichever mode is
+    chosen; the chosen mode's own band, beam and quality then decide what is imaged.
 
     The sensor is side-looking, as a SAR is: it cannot image at nadir. Incidence is
     measured at the target between the line of sight and the local vertical; the look
@@ -73,7 +82,8 @@ class SarSat(Environment[State, specs.BoundedArray, Observation]):
       edge of the band, tracked over the next ``lookahead_steps`` steps (zeros where not
       accessible). The pointing features are exactly the action's pointing slots in the
       action's own encoding, so a slot's features followed by its ``accessible`` flag
-      *is* the action that images that target;
+      *is* the action that images that target. With ``modes`` given, each slot also has
+      one flag per mode: whether a look in that mode, aimed at the target, images it;
     * ``num_neighbors`` x ``(az / pi, el / (pi / 2), distance / max_distance)`` -- the
       nearest satellites at the next step, nearest first;
     * own battery level.
@@ -110,6 +120,7 @@ class SarSat(Environment[State, specs.BoundedArray, Observation]):
         lookahead_steps: int = 2,
         max_observed_targets: int = 10,
         num_neighbors: int = 5,
+        modes: Optional[Sequence[Union[SensorMode, Mapping[str, Any]]]] = None,
     ) -> None:
         """Create the environment.
 
@@ -149,19 +160,48 @@ class SarSat(Environment[State, specs.BoundedArray, Observation]):
             lookahead_steps: number of future steps described by the observation.
             max_observed_targets: target slots in the observation.
             num_neighbors: neighbouring satellites in the observation.
+            modes: collection modes (:class:`sarsat.modes.SensorMode`, or mappings of its
+                fields) a satellite chooses between with the look slot. Replaces
+                ``beam_half_width_deg``, ``incidence_deg``, ``max_squint_deg`` and
+                ``sense_cost``, which describe the single default mode. Giving ``modes``
+                also adds the per-mode flags to the observation.
         """
         if not 1 <= num_satellites <= MAX_SATELLITES:
             raise ValueError(f"num_satellites must be in [1, {MAX_SATELLITES}]")
         if max_targets < 1 or lookahead_steps < 1:
             raise ValueError("max_targets and lookahead_steps must be at least 1")
-        if not 0 < incidence_deg[0] < incidence_deg[1]:
-            raise ValueError("incidence_deg must be an increasing (min, max) pair above 0")
+        if modes is None:
+            self.modes = (
+                SensorMode(
+                    sense_cost=sense_cost,
+                    incidence_deg=incidence_deg,
+                    max_squint_deg=max_squint_deg,
+                    beam_half_width_deg=beam_half_width_deg,
+                ),
+            )
+        else:
+            self.modes = tuple(as_mode(m) for m in modes)
+            if not self.modes:
+                raise ValueError("modes must hold at least one SensorMode")
+        for mode in self.modes:
+            if not 0 < mode.incidence_deg[0] < mode.incidence_deg[1]:
+                raise ValueError("incidence_deg must be an increasing (min, max) pair above 0")
+            if not 0 < recharge_rate <= mode.sense_cost <= 1:
+                raise ValueError("need 0 < recharge_rate <= sense_cost <= 1")
+        # The pointing slots sweep the envelope of every mode's band, and any mode's beam
+        # may be aimed anywhere in it, so the limits apply to the envelope.
+        incidence_deg = (
+            min(m.incidence_deg[0] for m in self.modes),
+            max(m.incidence_deg[1] for m in self.modes),
+        )
+        max_squint_deg = max(m.max_squint_deg for m in self.modes)
+        beam_half_width_deg = tuple(
+            max(m.beam_half_width_deg[i] for m in self.modes) for i in (0, 1)
+        )
         if incidence_deg[1] + beam_half_width_deg[0] >= 90:
             raise ValueError("max incidence plus beam half-width must stay below 90 degrees")
         if not 0 < max_squint_deg + beam_half_width_deg[1] < 90:
             raise ValueError("squint limit plus beam half-width must stay below 90 degrees")
-        if not 0 < recharge_rate <= sense_cost <= 1:
-            raise ValueError("need 0 < recharge_rate <= sense_cost <= 1")
         if hotspots < 0 or (hotspots and hotspots * hotspot_targets > max_targets):
             raise ValueError("hotspots * hotspot_targets must fit inside max_targets")
         if planes and num_satellites % planes:
@@ -184,20 +224,46 @@ class SarSat(Environment[State, specs.BoundedArray, Observation]):
         self.hotspot_weight = hotspot_weight
         self.planes = planes
         self.train_spacing_s = train_spacing_s
-        self.sense_cost = sense_cost
+        # The cheapest look: what the action mask's "can sense at all" is measured against.
+        self.sense_cost = min(m.sense_cost for m in self.modes)
         self.recharge_rate = recharge_rate
         self.lookahead_steps = lookahead_steps
         self.max_observed_targets = min(max_observed_targets, max_targets)
         self.num_neighbors = min(num_neighbors, num_satellites - 1)
 
+        # Envelope of the modes (the single mode's own values without ``modes``): the
+        # pointing encoding and the accessibility test that bounds every mode's own.
         self._beam_half_width = jnp.deg2rad(jnp.asarray(beam_half_width_deg, jnp.float32))
         self.incidence_deg = tuple(incidence_deg)
         self._incidence = jnp.deg2rad(jnp.asarray(incidence_deg, jnp.float32))
         self._max_squint = jnp.deg2rad(jnp.asarray(max_squint_deg, jnp.float32))
         self._max_distance = 2.0 * (EARTH_RADIUS_KM + altitude_km[1])
         self._sample_targets = TargetSampler()
+        # Per-mode arrays, indexed by the mode a look names.
+        self.num_modes = len(self.modes)
+        self._mode_cost = jnp.asarray([m.sense_cost for m in self.modes], jnp.float32)
+        self._mode_quality = jnp.asarray([m.quality for m in self.modes], jnp.float32)
+        self._mode_incidence = jnp.deg2rad(
+            jnp.asarray([m.incidence_deg for m in self.modes], jnp.float32)
+        )
+        self._mode_squint = jnp.deg2rad(
+            jnp.asarray([m.max_squint_deg for m in self.modes], jnp.float32)
+        )
+        self._mode_beam = jnp.deg2rad(
+            jnp.asarray([m.beam_half_width_deg for m in self.modes], jnp.float32)
+        )
+        # Whether some mode reaches less than the envelope, so access is tested per mode.
+        self._mode_bands_differ = any(
+            m.incidence_deg != self.incidence_deg or m.max_squint_deg != max_squint_deg
+            for m in self.modes
+        )
+        # Per-mode flags in each observation slot: only when ``modes`` was given, so the
+        # default layout (and every trained checkpoint) is unchanged.
+        self._mode_flags = 0 if modes is None else self.num_modes
         self.obs_dim = (
-            (self._pointing_dim + 1) * self.max_observed_targets * lookahead_steps
+            (self._pointing_dim + 1 + self._mode_flags)
+            * self.max_observed_targets
+            * lookahead_steps
             + 3 * self.num_neighbors
             + 1
         )
@@ -291,15 +357,14 @@ class SarSat(Environment[State, specs.BoundedArray, Observation]):
     def step(self, state: State, action: jax.Array) -> Tuple[State, TimeStep[Observation]]:
         """Advance one time step, then point, sense, score and recharge."""
         step = state.step + 1
-        _, sensing, in_beam = self._apply_action(state, step, action)
+        body, visible = self._target_geometry(state, step)
+        _, mode, sensing, in_beam = self.resolve_look(state, action, body, visible)
         imaged = jnp.any(in_beam, axis=0)  # (M,); a target pays once however many beams hit
         reward = jnp.sum(jnp.where(imaged, state.target_priority, 0.0))
 
         state = state._replace(
             step=step,
-            battery=jnp.clip(
-                state.battery + self.recharge_rate - self.sense_cost * sensing, 0.0, 1.0
-            ),
+            battery=self.next_battery(state.battery, mode, sensing),
             target_active=state.target_active & ~imaged,
         )
 
@@ -328,14 +393,14 @@ class SarSat(Environment[State, specs.BoundedArray, Observation]):
 
     @cached_property
     def action_spec(self) -> specs.BoundedArray:
-        # Continuous pointing slots are bounded to [-1, 1]; categorical slots (side, sense)
-        # carry a category index in {0, 1} stored as a float.
-        categorical = self.action_dim - 2
+        # Continuous pointing slots are bounded to [-1, 1]; categorical slots carry a
+        # category index stored as a float: side in {0, 1}, look in {0, ..., num_modes}.
+        sides = self.action_dim - 3
         return specs.BoundedArray(
             shape=(self.num_agents, self.action_dim),
             dtype=jnp.float32,
-            minimum=jnp.asarray([-1.0, -1.0] + [0.0] * categorical),
-            maximum=jnp.asarray([1.0, 1.0] + [1.0] * categorical),
+            minimum=jnp.asarray([-1.0, -1.0] + [0.0] * (sides + 1)),
+            maximum=jnp.asarray([1.0, 1.0] + [1.0] * sides + [float(self.num_modes)]),
             name="action",
         )
 
@@ -352,20 +417,85 @@ class SarSat(Environment[State, specs.BoundedArray, Observation]):
     # ------------------------------------------------------------------ #
 
     def _can_sense(self, battery: jax.Array) -> jax.Array:
-        """Whether the battery holds one step of sensing (tolerant of float32 round-off)."""
+        """Whether the battery holds the cheapest look (tolerant of float32 round-off).
+        This is what the action mask's look slot shows."""
         return battery >= self.sense_cost - 1e-6
+
+    def _can_afford(self, battery: jax.Array, mode: jax.Array) -> jax.Array:
+        """Whether each battery holds one look in its satellite's ``mode``."""
+        return battery >= self._mode_cost[mode] - 1e-6
+
+    def decode_look(self, action: jax.Array) -> Tuple[jax.Array, jax.Array]:
+        """``(N,)`` whether each satellite asks to image, and the ``(N,)`` int32 mode it names.
+
+        The look slot holds ``0`` for no look or ``k`` for mode ``k - 1``; values are
+        rounded to the nearest category and clipped into range, so a continuous policy is
+        also safe. The mode is meaningless where no look is requested.
+        """
+        look = action[:, self._pointing_dim]
+        mode = jnp.clip(jnp.round(look).astype(jnp.int32) - 1, 0, self.num_modes - 1)
+        return look > 0.5, mode
+
+    def resolve_look(
+        self, state, action: jax.Array, body: jax.Array, visible: jax.Array
+    ) -> Tuple[jax.Array, jax.Array, jax.Array, jax.Array]:
+        """Apply ``action`` to the geometry ``body``, ``visible`` of :meth:`_target_geometry`.
+
+        Returns the pointing angles ``(N, 2)`` [rad], the ``(N,)`` mode each look names,
+        the ``(N,)`` looks actually made (requested and paid for), and the ``(N, M)``
+        targets each look images: accessible, inside the chosen mode's band and beam, and
+        meeting the target's required quality. Every transition goes through here, so the
+        dynamics live in one place.
+        """
+        pointing = self._decode_pointing(state.orbit, action[:, : self._pointing_dim])
+        requested, mode = self.decode_look(action)
+        sensing = requested & self._can_afford(state.battery, mode)
+        half_width = self._mode_beam[mode]  # (N, 2)
+        lower = (pointing - half_width)[:, None, :]
+        upper = (pointing + half_width)[:, None, :]
+        in_beam = visible & sensing[:, None] & in_az_el_box(body, lower, upper)
+        if self._mode_bands_differ:
+            in_beam = in_beam & self._in_mode_band(state.orbit.radius, body, mode)
+        required = self._required_quality(state)
+        if required is not None:
+            in_beam = in_beam & (self._mode_quality[mode][:, None] >= required[None, :])
+        return pointing, mode, sensing, in_beam
+
+    def next_battery(self, battery: jax.Array, mode: jax.Array, sensing: jax.Array) -> jax.Array:
+        """Charge after one step: recharge, less the cost of the look made in ``mode``."""
+        spent = self._mode_cost[mode] * sensing
+        return jnp.clip(battery + self.recharge_rate - spent, 0.0, 1.0)
+
+    def _in_mode_band(self, radius: jax.Array, body: jax.Array, mode) -> jax.Array:
+        """Whether each line of sight in ``body`` ``(N, ..., 3)`` lies in the incidence band
+        and squint limit of ``mode`` (an ``(N,)`` array, or one int for every satellite).
+        ``radius`` is ``(N,)``."""
+        mode = jnp.broadcast_to(mode, radius.shape)
+        low, high = look_angle_band(radius, self._mode_incidence[mode])
+        extra = (1,) * (body.ndim - 2)  # broadcast the (N,) bounds over the target axes
+        return in_incidence_band(
+            body,
+            low.reshape(-1, *extra),
+            high.reshape(-1, *extra),
+            self._mode_squint[mode].reshape(-1, *extra),
+        )
+
+    def _required_quality(self, state) -> Optional[jax.Array]:
+        """``(M,)`` image quality each target requires, or ``None`` for no requirement.
+
+        The default asks for none, so every mode images every target it reaches. A subclass
+        whose state carries requirements returns them here; a look then only images a
+        target when its mode's ``quality`` is at least the target's requirement.
+        """
+        return None
 
     def _apply_action(
         self, state: State, step: jax.Array, action: jax.Array
     ) -> Tuple[jax.Array, jax.Array, jax.Array]:
         """Decode an action at ``step``: pointing angles (N, 2) [rad], the (N,) sensing
         flags actually honoured, and the (N, M) targets caught in a sensing beam."""
-        pointing = self._decode_pointing(state.orbit, action[:, : self._pointing_dim])
-        sensing = (action[:, self._pointing_dim] > 0.5) & self._can_sense(state.battery)
         body, visible = self._target_geometry(state, step)
-        beam_lower = (pointing - self._beam_half_width)[:, None, :]
-        beam_upper = (pointing + self._beam_half_width)[:, None, :]
-        in_beam = visible & sensing[:, None] & in_az_el_box(body, beam_lower, beam_upper)
+        pointing, _, sensing, in_beam = self.resolve_look(state, action, body, visible)
         return pointing, sensing, in_beam
 
     def _decode_pointing(self, orbit: Orbit, pointing: jax.Array) -> jax.Array:
@@ -429,6 +559,23 @@ class SarSat(Environment[State, specs.BoundedArray, Observation]):
         )
         return body, state.target_active & above_horizon & in_reach
 
+    def _mode_flags_of(
+        self, state, slot_body: jax.Array, visible: jax.Array, slots: jax.Array
+    ) -> jax.Array:
+        """``(L, N, slots, num_modes)`` float flags: whether a look in each mode, aimed at
+        the slot's target, images it (band, squint limit and quality; the beam is centred
+        on the target, so any footprint contains it)."""
+        radius = state.orbit.radius
+        reach = [
+            jax.vmap(lambda b, k=k: self._in_mode_band(radius, b, k))(slot_body)
+            for k in range(self.num_modes)
+        ]
+        flags = jnp.stack(reach, axis=-1) & visible[..., None]
+        required = self._required_quality(state)
+        if required is not None:
+            flags = flags & (self._mode_quality >= required[slots][..., None])  # (N, slots, K)
+        return flags.astype(jnp.float32)
+
     def _observe(self, state: State) -> Observation:
         """Build the egocentric observation for the steps following ``state.step``."""
         n = self.num_agents
@@ -441,12 +588,17 @@ class SarSat(Environment[State, specs.BoundedArray, Observation]):
         score = jnp.max(jnp.where(visible, cos_off_nadir, -jnp.inf), axis=0)
         _, slots = jax.lax.top_k(score, self.max_observed_targets)  # (N, slots)
         visible = jnp.take_along_axis(visible, slots[None], axis=2)
-        az, el = az_el(jnp.take_along_axis(body, slots[None, :, :, None], axis=2))
+        slot_body = jnp.take_along_axis(body, slots[None, :, :, None], axis=2)  # (L, N, slots, 3)
+        az, el = az_el(slot_body)
         pointing = self._encode_pointing(state.orbit, az, el)  # the action's own encoding
-        target_features = jnp.concatenate(
-            [visible[..., None].astype(jnp.float32), jnp.where(visible[..., None], pointing, 0.0)],
-            axis=-1,
-        )  # (L, N, slots, 1 + pointing_dim)
+        features = [
+            visible[..., None].astype(jnp.float32),
+            jnp.where(visible[..., None], pointing, 0.0),
+        ]
+        if self._mode_flags:
+            features.append(self._mode_flags_of(state, slot_body, visible, slots))
+        target_features = jnp.concatenate(features, axis=-1)
+        # (L, N, slots, 1 + pointing_dim [+ num_modes])
         target_features = jnp.moveaxis(target_features, 0, 2).reshape(n, -1)
 
         # Neighbours: nearest satellites at the next step, in the same body frame.
@@ -462,7 +614,8 @@ class SarSat(Environment[State, specs.BoundedArray, Observation]):
             axis=-1,
         ).reshape(n, -1)
 
-        # Pointing and side are always available; sensing needs charge.
+        # Pointing and side are always available; a look needs charge for the cheapest
+        # mode (a look in a mode the battery cannot pay for is ignored, as an unmasked one is).
         action_mask = jnp.ones((n, self.action_dim), bool)
         action_mask = action_mask.at[:, self._pointing_dim].set(self._can_sense(state.battery))
         return Observation(

@@ -31,7 +31,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from sarsat.evaluate import beam_directions, ecef_to_latlon, ray_ground_point
-from sarsat.orbits import EARTH_RADIUS_KM, EARTH_ROTATION_RAD_S, in_az_el_box, satellite_frames
+from sarsat.orbits import EARTH_RADIUS_KM, EARTH_ROTATION_RAD_S, satellite_frames
 from sarsat.targets import latlon_to_unit_vector
 from sarsat.types import Orbit
 from sarsat.windows import WindowedCoopSarSat, WindowedCoopState, WindowedState
@@ -185,11 +185,7 @@ class LiveWorld:
         fired and where, and the geometry to draw them (as ``sarsat.evaluate.run_episode``
         recomputes from ``_apply_action`` inside its own jitted step)."""
         env = self.env
-        pointing = env._decode_pointing(state.orbit, action[:, : env._pointing_dim])
-        sensing = (action[:, env._pointing_dim] > 0.5) & env._can_sense(state.battery)
-        lower = (pointing - env._beam_half_width)[:, None, :]
-        upper = (pointing + env._beam_half_width)[:, None, :]
-        in_beam = state.visible & sensing[:, None] & in_az_el_box(state.body, lower, upper)
+        pointing, _, sensing, in_beam = env.resolve_look(state, action, state.body, state.visible)
         state, reward, _, _ = env.transition_with_credit(state, action)
         state = env.refresh(state)
         obs = env.observe(state)
