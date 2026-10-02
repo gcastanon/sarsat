@@ -38,7 +38,7 @@ from omegaconf import DictConfig, OmegaConf
 
 from sarsat.announce import AnnouncedCoopSarSat
 from sarsat.coop import CoopSarSat, CoopState
-from sarsat.quality import QualityCoopSarSat
+from sarsat.quality import QualityCoopSarSat, WindowedQualityCoopSarSat
 from sarsat.windows import WindowedCoopSarSat
 
 LAST_SLOT_DIM = CoopSarSat.slot_dim  # slot width of the most recently built env
@@ -206,9 +206,9 @@ def make_sarsat_coop_envs(
     if "window_steps" in kwargs:
         env_cls = AnnouncedCoopSarSat if "announce_lead_s" in kwargs else WindowedCoopSarSat
     if any(k.endswith("_quality") for k in kwargs):
-        if env_cls is not CoopSarSat:
-            raise NotImplementedError("quality requirements are not combined with windows")
-        env_cls = QualityCoopSarSat
+        if env_cls is AnnouncedCoopSarSat:
+            raise NotImplementedError("quality requirements are not combined with announcements")
+        env_cls = WindowedQualityCoopSarSat if env_cls is WindowedCoopSarSat else QualityCoopSarSat
     train_env, eval_env = env_cls(**kwargs), env_cls(**kwargs)
     if "network" in config:
         for net in ("actor_network", "critic_network"):

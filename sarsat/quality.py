@@ -8,7 +8,9 @@ it without change. Every hotspot cluster draws one level that all of its targets
 event needs one kind of image), and every background target draws its own. The levels are
 sampled from a key folded off the reset key, so orbits and targets are exactly those of
 ``SarSat`` for the same key, and the default single level ``0.0`` reproduces it entirely.
-:class:`QualityCoopSarSat` is the same on :class:`sarsat.coop.CoopSarSat`.
+:class:`QualityCoopSarSat` is the same on :class:`sarsat.coop.CoopSarSat`, and
+:class:`WindowedQualitySarSat` / :class:`WindowedQualityCoopSarSat` combine it with the
+time-windowed events of :mod:`sarsat.windows` (DECISIONS.md issue 35).
 
 Why per-cluster levels: background targets are sparse (about one per 30,000 km^2), so a
 wide beam rarely catches more than the target it is aimed at. A wide, coarse mode only
@@ -26,10 +28,11 @@ from typing import NamedTuple, Optional, Sequence, Union
 import jax
 import jax.numpy as jnp
 
-from sarsat.coop import CoopSarSat
+from sarsat.coop import SLOT_DIM, CoopSarSat
 from sarsat.env import SarSat
 from sarsat.modes import SensorMode
 from sarsat.types import Orbit
+from sarsat.windows import WindowedCoopSarSat, WindowedSarSat
 
 # Beam half-widths at ~550 km altitude and ~35 degrees incidence: about 0.036 deg per km of
 # footprint width cross-track and 0.043 deg per km of footprint length along-track. The strip
@@ -97,6 +100,8 @@ class QualityState(NamedTuple):
 class QualitySarSat(SarSat):
     """``SarSat`` whose targets each require a minimum image quality."""
 
+    _quality_state_cls = QualityState  # the base state plus ``target_quality``
+
     def __init__(
         self,
         *args,
@@ -130,7 +135,7 @@ class QualitySarSat(SarSat):
         base = super()._initial_state(key, num_targets)
         # Folded off the reset key so orbits and targets are those of ``SarSat``.
         quality = self._sample_quality(jax.random.fold_in(key, 32))
-        return QualityState(*base, target_quality=quality)
+        return self._quality_state_cls(*base, target_quality=quality)
 
     def _sample_quality(self, key: jax.Array) -> jax.Array:
         """``(M,)`` required quality for every target slot."""
@@ -177,3 +182,52 @@ class QualityCoopSarSat(CoopSarSat, QualitySarSat):
     (DECISIONS.md issue 33) only count what a mode is good enough to image."""
 
     state_cls = QualityCoopState
+
+
+class WindowedQualityState(NamedTuple):
+    """:class:`sarsat.windows.WindowedState` plus the image quality each target requires."""
+
+    key: jax.Array
+    step: jax.Array
+    orbit: Orbit
+    battery: jax.Array
+    target_latlon: jax.Array
+    target_pos: jax.Array
+    target_priority: jax.Array
+    target_active: jax.Array
+    target_window: jax.Array
+    target_quality: jax.Array
+
+
+class WindowedQualitySarSat(QualitySarSat, WindowedSarSat):
+    """Time-windowed targets (``WindowedSarSat``) that also require a minimum image quality.
+    Orbits, targets and windows are those of ``WindowedSarSat`` for the same key."""
+
+    _quality_state_cls = WindowedQualityState
+
+
+class WindowedQualityCoopState(NamedTuple):
+    """:class:`sarsat.windows.WindowedCoopState` plus the image quality each target requires."""
+
+    key: jax.Array
+    step: jax.Array
+    orbit: Orbit
+    battery: jax.Array
+    target_latlon: jax.Array
+    target_pos: jax.Array
+    target_priority: jax.Array
+    target_active: jax.Array
+    target_window: jax.Array
+    target_quality: jax.Array
+    cluster_access: jax.Array
+    team_future: jax.Array
+    body: jax.Array
+    visible: jax.Array
+
+
+class WindowedQualityCoopSarSat(WindowedCoopSarSat, WindowedQualitySarSat):
+    """``WindowedCoopSarSat`` (window-gated look-ahead, window-left slot feature) over targets
+    with quality requirements, with the mode-aware beam slots of issue 33."""
+
+    state_cls = WindowedQualityCoopState
+    slot_dim = SLOT_DIM + 1

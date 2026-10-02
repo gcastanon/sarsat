@@ -7,7 +7,8 @@ planes, and the hotspots are 10-30 step windowed events over a persistent backgr
 targets at a 5% duty cycle; ``announced500``: the same with every request windowed and
 announced at random at least 30 minutes ahead, which only the observation sees;
 ``modes100``: the ``hotspots100`` field with 30 km clusters, four SAR collection modes and
-per-target image-quality requirements, DECISIONS.md issue 32 -- see
+per-target image-quality requirements, DECISIONS.md issue 32; ``modes200`` / ``modes500``:
+the ``events200`` / ``events500`` fields with the same modes and requirements, issue 35 -- see
 ``mapx_integration/mapx/configs/env/scenario/sarsat-*.yaml``),
 all with a 180-step time limit, this runs any of ``--policies`` (``random``, ``greedy``, and the
 four ``sarsat.reference`` yardsticks ``greedy_beam``, ``solo_plan``, ``coop_dedup``,
@@ -51,7 +52,7 @@ import numpy as np
 import sarsat.reference as reference
 from sarsat.announce import AnnouncedSarSat
 from sarsat.evaluate import greedy_policy_for
-from sarsat.quality import MODES, QualitySarSat
+from sarsat.quality import MODES, QualitySarSat, WindowedQualitySarSat
 from sarsat.reference import REFERENCE_POLICIES, ReferenceController, lean_precompute
 from sarsat.windows import WindowedSarSat
 
@@ -115,6 +116,38 @@ SCENARIOS = {
         background_quality_weights=(0.4, 0.4, 0.2),
         modes=MODES,
     ),
+    "modes200": dict(
+        num_satellites=200,
+        max_targets=8000,
+        hotspots=40,
+        hotspot_targets=50,
+        hotspot_weight=10.0,
+        hotspot_radius_km=30.0,
+        planes=20,
+        window_steps=(10, 30),
+        background_windows=False,
+        recharge_rate=0.01,
+        hotspot_quality=(1.0, 3.0, 5.0, 7.0),
+        background_quality=(1.0, 3.0, 5.0),
+        background_quality_weights=(0.4, 0.4, 0.2),
+        modes=MODES,
+    ),
+    "modes500": dict(
+        num_satellites=500,
+        max_targets=20000,
+        hotspots=100,
+        hotspot_targets=50,
+        hotspot_weight=10.0,
+        hotspot_radius_km=30.0,
+        planes=50,
+        window_steps=(10, 30),
+        background_windows=False,
+        recharge_rate=0.005,
+        hotspot_quality=(1.0, 3.0, 5.0, 7.0),
+        background_quality=(1.0, 3.0, 5.0),
+        background_quality_weights=(0.4, 0.4, 0.2),
+        modes=MODES,
+    ),
 }
 
 
@@ -126,11 +159,12 @@ def build_env(scenario: str) -> WindowedSarSat:
     """``WindowedSarSat`` for ``scenario`` (== plain ``SarSat`` for ``hotspots100``, since it
     has no ``window_steps`` and ``WindowedSarSat`` with ``window_steps=(0, 0)`` reproduces
     ``SarSat`` entirely); ``AnnouncedSarSat`` when the scenario announces its requests;
-    ``QualitySarSat`` when its targets carry quality requirements (no windows)."""
+    ``QualitySarSat`` when its targets carry quality requirements, ``WindowedQualitySarSat``
+    when they also have windows (``modes200``, ``modes500``)."""
     kwargs = SCENARIOS[scenario]
     cls = AnnouncedSarSat if "announce_lead_s" in kwargs else WindowedSarSat
     if "hotspot_quality" in kwargs:
-        cls = QualitySarSat
+        cls = WindowedQualitySarSat if "window_steps" in kwargs else QualitySarSat
     return cls(**kwargs, time_limit=180)
 
 

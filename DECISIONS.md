@@ -7,7 +7,8 @@ and its consequences. Anything rejected as "beyond a basic model" is cross-refer
 Issues are in the order they were decided. 1-21 define the environment; 22-28 are
 experiments (benchmarks, training runs, the live demo) and report their measurements;
 29 moves the demo out, 31-33 extend the environment (collection modes, quality
-requirements, mode-aware slots and references) and 34 trains on it.
+requirements, mode-aware slots and references), 34 trains on it and 35 carries it to the
+event fields.
 
 | # | Issue | Decision in one line |
 |---|-------|----------------------|
@@ -45,6 +46,7 @@ requirements, mode-aware slots and references) and 34 trains on it.
 | 32 | Quality requirements and four SAR modes | `QualitySarSat`: a level per cluster and per background target; `sarsat-100sat-modes` |
 | 33 | Mode-aware slots and references | Beams over (target, mode), ranked by value per unit of battery; `coop_plan` 0.640 on `sarsat-100sat-modes` |
 | 34 | MAPPO on the modes field | 1500 + 1500 + low-LR 600 updates tie `coop_plan` on seed 42 (99.8% test, 100.2% validation); seed 11 at 96% |
+| 35 | Modes on the event fields | `WindowedQualitySarSat`: windows and quality requirements together; `sarsat-200sat-modes`, `sarsat-500sat-modes` |
 
 ---
 
@@ -1408,3 +1410,26 @@ pitfall cost the first pod launch: `/etc/rp_environment` sets `LD_LIBRARY_PATH` 
 CUDA, which hides the venv's CUDA wheels, and JAX silently trains on the CPU; launch scripts now
 unset it. `mapx_integration/params_snapshot.py` writes a run's actor params (~1 MB) for keeping.
 A third seed (23) is running through the same three stages.
+
+## Issue 35 - Collection modes on the 200- and 500-satellite event fields
+
+**Question.** Issues 32-34 added modes and quality requirements on the persistent hotspot
+field. The 200- and 500-satellite benchmarks are about time-windowed events (issues 24, 26):
+how do the two combine?
+
+**Decision.** `sarsat.quality.WindowedQualitySarSat` is `QualitySarSat` over
+`WindowedSarSat`, and `WindowedQualityCoopSarSat` is `WindowedCoopSarSat` over it: the state
+carries both `target_window` and `target_quality`; a look images a target only inside its
+window and only in a mode good enough for it; the coop slots keep the window-left feature and
+add the mode one-hot (`slot_dim` 9 + modes). `QualitySarSat` builds its state through
+`_quality_state_cls`, so each combination declares its own state type. With the default
+quality level the windowed env is reproduced exactly (tested to the observation).
+`sarsat-200sat-modes` and `sarsat-500sat-modes` are the event fields unchanged (windows,
+duty cycles, persistent background) with `sarsat-100sat-modes`'s four modes and quality
+levels, and 30 km clusters so a ScanSAR swath can hold one. The coop MAPX factory, the
+baseline script (`modes200`, `modes500`), `eval_checkpoint.py` and `diagnose_policy.py`
+build the new classes when a scenario has both windows and quality keys; announcements with
+quality are refused.
+
+**Consequences.** Locally (WSL, ~4 GB allocation cap) the 200-satellite modes field fits 12
+environments, not 16: training runs at ~1,400 env-steps/s, ~45 min per 1500 updates.

@@ -531,12 +531,13 @@ def run_reference(policy: str, seed: int, scenario_kwargs: Dict[str, Any]) -> Di
     # and mode-aware (access some mode can serve, values scaled by mode cost; issue 33).
     reference_module.precompute = reference_module.lean_precompute
 
-    from sarsat.quality import QualitySarSat
+    from sarsat.quality import QualitySarSat, WindowedQualitySarSat
     from sarsat.reference import ReferenceController
     from sarsat.windows import WindowedSarSat
 
     if any(k.endswith("_quality") for k in scenario_kwargs):
-        env = QualitySarSat(**scenario_kwargs)  # quality requirements (no windows)
+        cls = WindowedQualitySarSat if "window_steps" in scenario_kwargs else QualitySarSat
+        env = cls(**scenario_kwargs)  # quality requirements (with windows: issue 35)
     else:
         env = WindowedSarSat(**scenario_kwargs)  # == SarSat unless scenario sets window_steps
     num_hot = env.hotspots * env.hotspot_targets
