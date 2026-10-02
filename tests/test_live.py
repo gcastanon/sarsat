@@ -214,3 +214,69 @@ def test_request_spills_into_the_next_episode() -> None:
         world.step(_actions(env, jax.random.PRNGKey(700 + world.global_step), sense=False))
     assert request.status == "missed"
     assert world.global_step == request.close_global
+
+
+# ------------------------------------------------- collection modes and quality (issue 36)
+
+
+def _quality_env(**overrides):
+    from sarsat.quality import MODES, WindowedQualityCoopSarSat
+
+    kwargs = dict(
+        num_satellites=20,
+        max_targets=1000,
+        hotspots=10,
+        hotspot_targets=50,
+        hotspot_weight=10.0,
+        hotspot_radius_km=30.0,
+        planes=2,
+        window_steps=(5, 10),
+        background_windows=False,
+        recharge_rate=0.005,
+        time_limit=T,
+        ranked_contention=True,
+        hotspot_quality=(1.0, 3.0, 5.0, 7.0),
+        background_quality=(1.0, 3.0, 5.0),
+        modes=MODES,
+    )
+    return WindowedQualityCoopSarSat(**(kwargs | overrides))
+
+
+def _slot0_look(env, obs):
+    """Slot 0's pointing in slot 0's mode (the mode-aware greedy rule)."""
+    view = np.asarray(obs.agents_view)
+    slot = view[:, : env.slot_dim]
+    mode = np.argmax(slot[:, -env.num_modes :], axis=-1) + 1
+    look = np.where(slot[:, 0] > 0.5, mode, 0)
+    return jnp.asarray(np.concatenate([slot[:, 1:4], look[:, None]], axis=-1), jnp.float32)
+
+
+def test_quality_world_rolls_over_and_draws_each_mode_footprint() -> None:
+    env = _quality_env()
+    world = LiveWorld(env, seed=SEED)
+    quality0 = np.asarray(world.state.target_quality)
+    modes_seen, rolled = set(), False
+    for _ in range(T + 3):
+        res = world.step(_slot0_look(env, world.obs))
+        assert set(res.modes) == set(res.footprints)  # one mode per drawn footprint
+        modes_seen |= set(res.modes.values())
+        rolled |= res.new_episode
+    assert rolled and world.episode == 1
+    assert "quality" in world.target_table()
+    # Background targets that survived the boundary kept their requirement.
+    hot = env.num_clusters * env.hotspot_targets
+    table = world.target_table()
+    assert set(np.unique(table["quality"])) <= {1.0, 3.0, 5.0, 7.0}
+    assert quality0.shape == table["quality"].shape and hot < len(quality0)
+    assert len(modes_seen) >= 2
+
+
+def test_request_carries_its_quality_into_the_cluster() -> None:
+    env = _quality_env()
+    world = LiveWorld(env, seed=SEED)
+    r = world.inject_request(10.0, 20.0, quality=7.0)
+    slots = r.cluster + env.num_clusters * np.arange(env.hotspot_targets)
+    np.testing.assert_array_equal(np.asarray(world.state.target_quality)[slots], 7.0)
+    assert r.to_dict()["quality"] == 7.0
+    with pytest.raises(ValueError):
+        LiveWorld(_env(), seed=SEED).inject_request(10.0, 20.0, quality=7.0)

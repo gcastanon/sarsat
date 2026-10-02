@@ -18,6 +18,12 @@ outlive the episode is clipped at the time limit and carried into the next episo
 policy never sees an access past the limit (it never did in training).
 
 DECISIONS.md issue 28 has the reasoning; ``live/`` has the server that drives this.
+
+With collection modes and quality requirements (``sarsat.quality.WindowedQualityCoopSarSat``,
+DECISIONS.md issues 31-36) the same world runs unchanged: each look's footprint is drawn with
+its own mode's beam and :attr:`StepResult.modes` says which mode it was, a request can carry the
+image quality it needs (``inject_request(..., quality=...)``), and background targets keep
+their requirement across the episode boundary.
 """
 
 from __future__ import annotations
@@ -61,6 +67,7 @@ class Request:
     text: str = ""
     place: str = ""
     status: str = "pending"  # pending | collected | missed
+    quality: Optional[float] = None  # image quality required (quality envs); None: any look
     collected_global: Optional[int] = None
     collected_by: Optional[int] = None
     feasible_count: int = 0
@@ -100,6 +107,7 @@ class StepResult:
     events_closed: List[EventRecord]
     request_updates: List[Request]
     new_episode: bool  # the step ended an episode; the caller must reset its policy
+    modes: Dict[int, int] = field(default_factory=dict)  # satellite -> mode index, sensing only
 
 
 def rebase_orbit(orbit: Orbit, time_s: float) -> Orbit:
@@ -154,8 +162,10 @@ class LiveWorld:
         self._next_base: Optional[WindowedState] = None
         self._next_rows: List[jax.Array] = []
 
-        hw = np.asarray(env._beam_half_width) * 180 / np.pi
-        self._corner_offsets = np.array([[-1, -1], [1, -1], [1, 1], [-1, 1]]) * hw
+        # Footprint corners per mode, (modes, 4, 2) degrees; one row without modes.
+        hw = np.asarray(env._mode_beam) * 180 / np.pi
+        self._corner_offsets = np.array([[-1, -1], [1, -1], [1, 1], [-1, 1]])[None] * hw[:, None]
+        self._has_quality = "target_quality" in env.state_cls._fields
 
         self._jit_reset = jax.jit(env.reset)
         self._jit_advance = jax.jit(self._advance)
@@ -185,12 +195,12 @@ class LiveWorld:
         fired and where, and the geometry to draw them (as ``sarsat.evaluate.run_episode``
         recomputes from ``_apply_action`` inside its own jitted step)."""
         env = self.env
-        pointing, _, sensing, in_beam = env.resolve_look(state, action, state.body, state.visible)
+        pointing, mode, sensing, in_beam = env.resolve_look(state, action, state.body, state.visible)
         state, reward, _, _ = env.transition_with_credit(state, action)
         state = env.refresh(state)
         obs = env.observe(state)
         position, frame = satellite_frames(state.orbit, state.step * env.step_seconds)
-        return state, obs, reward, sensing, in_beam, position, frame, pointing
+        return state, obs, reward, sensing, in_beam, position, frame, pointing, mode
 
     def step(self, action: jax.Array) -> StepResult:
         """Apply ``action`` ``(N, 4)``; rolls the episode over when it ends."""
@@ -200,14 +210,17 @@ class LiveWorld:
         sensing, in_beam = np.asarray(out[3]), np.asarray(out[4])
         position, frame = np.asarray(out[5], np.float64), np.asarray(out[6], np.float64)
         pointing = np.degrees(np.asarray(out[7]))
+        mode = np.asarray(out[8])
         step = int(self.state.step)
         self.global_step += 1
         self._episode_return += reward
 
-        # Footprints of the sensing satellites (as sarsat.evaluate.run_episode does).
+        # Footprints of the sensing satellites (as sarsat.evaluate.run_episode does), each
+        # with its own mode's beam.
         sats = np.flatnonzero(sensing)
         angles = np.concatenate(
-            [pointing[sats, None, :], pointing[sats, None, :] + self._corner_offsets], axis=1
+            [pointing[sats, None, :], pointing[sats, None, :] + self._corner_offsets[mode[sats]]],
+            axis=1,
         )
         ground = ray_ground_point(position[sats, None, :], beam_directions(frame[sats], angles))
         footprints = {int(s): ground[i, 1:] for i, s in enumerate(sats)}
@@ -255,6 +268,7 @@ class LiveWorld:
             events_closed=closed,
             request_updates=updates,
             new_episode=new_episode,
+            modes={int(s): int(mode[s]) for s in sats},
         )
 
     def _update_requests(self, in_beam: np.ndarray, active: np.ndarray) -> List[Request]:
@@ -290,19 +304,9 @@ class LiveWorld:
         (``fold_in`` keys, so the draw is reproducible), the orbits continued, batteries and
         background targets as they are (``_finish_next`` patches those at the boundary)."""
         env = self.env
-        fresh = env.base_state(key)
+        fresh = env.base_state(key)  # WindowedState, or its quality variant
         orbit = rebase_orbit(state.orbit, self.T * env.step_seconds)
-        return WindowedState(
-            key=fresh.key,
-            step=jnp.zeros((), jnp.int32),
-            orbit=orbit,
-            battery=state.battery,
-            target_latlon=fresh.target_latlon,
-            target_pos=fresh.target_pos,
-            target_priority=fresh.target_priority,
-            target_active=fresh.target_active,
-            target_window=fresh.target_window,
-        )
+        return fresh._replace(step=jnp.zeros((), jnp.int32), orbit=orbit, battery=state.battery)
 
     def _schedule_rows(self, base: WindowedState, start: jax.Array) -> jax.Array:
         """One batch of ``cluster_schedule`` rows, ``self._rows`` steps starting at
@@ -326,6 +330,9 @@ class LiveWorld:
             target_latlon=latlon,
             target_pos=EARTH_RADIUS_KM * latlon_to_unit_vector(latlon),
         )
+        if self._has_quality:  # a surviving target keeps what it requires
+            quality = jnp.where(keep, state.target_quality, base.target_quality)
+            base = base._replace(target_quality=quality)
         return env.assemble(base, access[: env.schedule_length])
 
     def _prebuild(self) -> None:
@@ -367,7 +374,8 @@ class LiveWorld:
             c = self._choose_cluster(0)
             latlon, weight = self._request_field(r, state)
             window = jnp.array([1, remainder], jnp.int32)
-            state = self._jit_inject(state, jnp.int32(c), latlon, weight, window)
+            quality = jnp.float32(r.quality or 0.0)
+            state = self._jit_inject(state, jnp.int32(c), latlon, weight, window, quality)
             self._windows[c] = (1, remainder)
             r.cluster = c
             self._cluster_request[c] = r.id
@@ -409,9 +417,11 @@ class LiveWorld:
         latlon: jax.Array,
         priority: jax.Array,
         window: jax.Array,
+        quality: jax.Array = 0.0,
     ) -> WindowedCoopState:
-        """Cluster ``c`` becomes ``latlon`` with ``priority`` and ``window``; its column of
-        the cluster schedule and the team's future-access counts follow (``coop.assemble``)."""
+        """Cluster ``c`` becomes ``latlon`` with ``priority``, ``window`` and, in a quality
+        environment, the required ``quality``; its column of the cluster schedule and the
+        team's future-access counts follow (``coop.assemble``)."""
         env = self.env
         idx = c + self.C * jnp.arange(self.K)
         pos = EARTH_RADIUS_KM * latlon_to_unit_vector(latlon)
@@ -433,6 +443,8 @@ class LiveWorld:
             cluster_access=access,
             team_future=team_future,
         )
+        if self._has_quality:
+            state = state._replace(target_quality=state.target_quality.at[idx].set(quality))
         return env.refresh(state)
 
     def inject_request(
@@ -443,10 +455,14 @@ class LiveWorld:
         deadline_steps: int = MAX_DEADLINE_STEPS,
         text: str = "",
         place: str = "",
+        quality: Optional[float] = None,
     ) -> Request:
-        """Add a request at ``(lat, lon)`` to be imaged within ``deadline_steps`` steps."""
+        """Add a request at ``(lat, lon)`` to be imaged within ``deadline_steps`` steps, in a
+        quality environment by a look of at least ``quality`` (``None``: any mode will do)."""
         if priority not in PRIORITY_WEIGHT:
             raise ValueError(f"priority must be one of {sorted(PRIORITY_WEIGHT)}")
+        if quality is not None and not self._has_quality:
+            raise ValueError("this environment has no quality requirements")
         deadline = int(max(1, min(int(deadline_steps), MAX_DEADLINE_STEPS)))
         step = int(self.state.step)
         c = self._choose_cluster(step)
@@ -461,6 +477,7 @@ class LiveWorld:
             cluster=c,
             text=text,
             place=place,
+            quality=None if quality is None else float(quality),
         )
         feas = self.feasibility(lat, lon, deadline)
         r.feasible = feas["satellites"]
@@ -469,7 +486,8 @@ class LiveWorld:
         close = min(step + deadline, self.T)
         latlon, weight = self._request_field(r, self.state)
         window = jnp.array([step + 1, close], jnp.int32)
-        state = self._jit_inject(self.state, jnp.int32(c), latlon, weight, window)
+        quality = jnp.float32(r.quality or 0.0)
+        state = self._jit_inject(self.state, jnp.int32(c), latlon, weight, window, quality)
         self.state, self.obs = state, self._jit_observe(state)
         self._windows[c] = (step + 1, close)
         self._cluster_request[c] = r.id
@@ -512,19 +530,23 @@ class LiveWorld:
 
     def target_table(self) -> Dict[str, np.ndarray]:
         """The current field: ``latlon (M, 2)``, ``cluster (M,)`` (-1 background),
-        ``weight (M,)`` in event-target units, ``window (M, 2)``, ``active (M,)``."""
+        ``weight (M,)`` in event-target units, ``window (M, 2)``, ``active (M,)``, and in a
+        quality environment ``quality (M,)``."""
         s = self.state
         priority = np.asarray(s.target_priority)
         unit = priority.max() if priority.size else 1.0
         slot = np.arange(self.M)
         cluster = np.where(slot < self.C * self.K, slot % self.C, -1)
-        return {
+        table = {
             "latlon": np.asarray(s.target_latlon),
             "cluster": cluster,
             "weight": priority / unit,
             "window": np.asarray(s.target_window),
             "active": np.asarray(s.target_active),
         }
+        if self._has_quality:
+            table["quality"] = np.asarray(s.target_quality)
+        return table
 
     def cluster_windows(self) -> np.ndarray:
         return self._windows.copy()

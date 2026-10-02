@@ -47,6 +47,7 @@ event fields.
 | 33 | Mode-aware slots and references | Beams over (target, mode), ranked by value per unit of battery; `coop_plan` 0.640 on `sarsat-100sat-modes` |
 | 34 | MAPPO on the modes field | 1500 + 1500 + low-LR 600 updates tie `coop_plan` on seed 42 (99.8% test, 100.2% validation); seed 11 at 96% |
 | 35 | Modes on the event fields | `WindowedQualitySarSat`: windows and quality requirements together; `sarsat-200sat-modes`, `sarsat-500sat-modes` |
+| 36 | The live world with modes | `LiveWorld` runs the quality env: per-mode footprints, `StepResult.modes`, requests with a quality |
 
 ---
 
@@ -1433,3 +1434,21 @@ quality are refused.
 
 **Consequences.** Locally (WSL, ~4 GB allocation cap) the 200-satellite modes field fits 12
 environments, not 16: training runs at ~1,400 env-steps/s, ~45 min per 1500 updates.
+
+## Issue 36 - The live world with collection modes
+
+**Question.** `LiveWorld` (issue 28) re-packed each episode into an explicit `WindowedState`
+and drew every footprint with the one beam. What does it need to run a policy trained on
+`sarsat-500sat-modes`?
+
+**Decision.** The next episode's base is the environment's own fresh state with the orbit,
+step and battery replaced (`fresh._replace(...)`), so whatever state type the environment
+uses rides along; for `WindowedCoopSarSat` the values are those of before. Each look's
+footprint uses its own mode's beam half-widths, and `StepResult.modes` maps each sensing
+satellite to its mode (a new trailing field with a default, so callers that ignore it are
+unchanged). `inject_request(..., quality=...)` sets the image quality the request needs on
+all of its cluster's slots (refused without a quality environment; `None` asks for any look)
+and the request keeps it across the episode boundary, as background targets that survive the
+boundary keep theirs. Tested on a scaled-down `sarsat-500sat-modes` world (rollover, per-mode
+footprints, request quality); the existing live tests pass unchanged. The server, UI and NL
+parser that use this live in sarsat-live.
