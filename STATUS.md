@@ -1,6 +1,6 @@
 # Status
 
-_Last updated: 2026-10-02 (issue 34). Read this first when picking the project up. Keep it
+_Last updated: 2026-10-02 (issue 37). Read this first when picking the project up. Keep it
 short and current: history lives in git, reasoning in DECISIONS.md, results in README.md._
 
 ## Where things live
@@ -9,7 +9,7 @@ short and current: history lives in git, reasoning in DECISIONS.md, results in R
 |---|---|---|
 | Source of truth | this git repository | pull at the start of a session, push at the end |
 | Overview and results | `README.md` | quick start, scenarios, the results table |
-| Design rationale | `DECISIONS.md` (issues 1-34) | append an issue for any non-obvious choice |
+| Design rationale | `DECISIONS.md` (issues 1-37) | append an issue for any non-obvious choice |
 | Codebase guide | `docs/index.html` | code map, data flow, experiment / training / evaluation walkthrough; update it when those change |
 | Deferred ideas | `IMPROVEMENTS.md` | move an item out when it is built |
 | Training | `mapx_integration/` | overlay files for a MAPX checkout, launch and evaluation scripts; see its README |
@@ -89,8 +89,11 @@ short and current: history lives in git, reasoning in DECISIONS.md, results in R
   (issue 28). Training from a random initial charge should fix it.
 * **Collection modes** (issues 31-34). MAPPO with the mode-aware slot-mixture head ties
   `coop_plan` on `sarsat-100sat-modes` for seed 42 after 1500 + 1500 + 600 low-LR updates
-  (99.8% test, 100.2% validation); seed 11 reaches 96%. Next: the 200/500-satellite event
-  fields with modes and quality, then an intent/claim channel (duplicates are the gap).
+  (99.8% test, 100.2% validation); seed 11 reaches 96%. On the event fields with modes
+  (issues 35, 37): 200 sats 94-98% of `coop_plan` over three seeds, 500 sats 88.7% (the
+  learner never learns staring at the 5% duty cycle). Next: staring rationing and
+  coordination at 500 sats (recharge curriculum, own-share credit, intent/claim channel).
+  The live demo (sarsat-live, uncommitted there) runs `--scenario modes200` / `modes500`.
   Unfixed: single-mode `coop_dedup` / `coop_plan` let a satellite that cannot pay for a look
   claim its beam (issue 33).
 * **Side switch vs signed action encoding.** No training evidence either way (issue 21).

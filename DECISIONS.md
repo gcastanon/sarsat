@@ -48,6 +48,7 @@ event fields.
 | 34 | MAPPO on the modes field | 1500 + 1500 + low-LR 600 updates tie `coop_plan` on seed 42 (99.8% test, 100.2% validation); seed 11 at 96% |
 | 35 | Modes on the event fields | `WindowedQualitySarSat`: windows and quality requirements together; `sarsat-200sat-modes`, `sarsat-500sat-modes` |
 | 36 | The live world with modes | `LiveWorld` runs the quality env: per-mode footprints, `StepResult.modes`, requests with a quality |
+| 37 | MAPPO on the 200/500 modes fields | 200 sats: 94-98% of `coop_plan` over three seeds; 500 sats: 88.7%, the learner never learns staring at a 5% duty cycle |
 
 ---
 
@@ -1452,3 +1453,46 @@ and the request keeps it across the episode boundary, as background targets that
 boundary keep theirs. Tested on a scaled-down `sarsat-500sat-modes` world (rollover, per-mode
 footprints, request quality); the existing live tests pass unchanged. The server, UI and NL
 parser that use this live in sarsat-live.
+
+## Issue 37 - MAPPO on the 200- and 500-satellite modes fields
+
+**Question.** Does the issue-34 recipe (mode-aware slot-mixture head, credit_mix 0.5, then a
+full-LR resume and a low-LR fine-tune) carry to the event fields with modes (issue 35)?
+
+**References** (paired seeds; test 1000-1015, validation 2000-2015 for 200 sats; test only
+for 500 sats, where one planner episode takes ~8 min on a CPU):
+
+| field | greedy_beam | coop_dedup | solo_plan | coop_plan |
+|---|---|---|---|---|
+| 200 sats, test / validation | 0.267 / 0.276 | 0.280 / 0.288 | 0.281 / 0.292 | 0.455 / 0.472 |
+| 500 sats, test | 0.195 | 0.211 | 0.309 | 0.582 |
+
+**200 satellites** (local RTX 5070 Ti, 12 envs, the WSL allocation cap; ~45 min per 1500
+updates). Three seeds through stage 1 (1500 updates, plateau rule), a full-LR resume
+(plateau rule) and a low-LR fine-tune (600 updates): seed 42 0.447 / 0.463 (98.1% / 98.2% of
+coop_plan; paired diff -0.0085 +- 0.0023, 3/16 wins on test), seed 11 0.441 / 0.459
+(96.8% / 97.3%), seed 23 0.428 / 0.445 (94.0% / 94.4%). Every seed beats every independent
+reference on all 32 seeds. A second, lower-LR leg on seed 42 (2e-5) added nothing. Pure
+team reward (credit_mix 0) scores 0.201 / 0.215, below greedy_beam, as at 100 satellites.
+
+**500 satellites** (one A40, 12 envs, 250 env-steps/s, 25 GB; 8.7 s per update). Stage 1
+plateau-stopped at update 1110 (best at 810): 0.509 (87.5%), 0/16 wins, 16/16 over
+solo_plan. A low-LR fine-tune from it: 0.509, no gain. A full-LR resume (plateau-stopped at
+1110, best at 810): **0.516 (88.7%)**, +0.007 +- 0.001 over stage 1 on 16/16 seeds. MAPX's own
+12-episode evaluation read 0.548-0.557 at the best checkpoints: the maximum of noisy
+evaluations is biased upward, and only the paired seeds are trusted.
+
+**Diagnosis** (`diagnose_policy.py`, seeds 1000 and 1004, stage-1 best vs coop_plan): the
+learner makes 2 staring looks per episode against coop_plan's 249, 815 spotlight against
+2504 and 7525 stripmap against 4224; it reaches open events with 0.45 charge against 0.73,
+images 53% of event priority against 65%, and wastes 273 priority units on same-step
+duplicates against 24. At the 5% duty cycle one staring look costs 60 steps of charge; the
+policy spends charge on background stripmap looks as it comes into view and never learned to
+save it for the staring-grade quarter of the events (at 100 satellites, 20% duty cycle, it
+matched coop_plan's staring count, issue 34). The 500-satellite gap is therefore rationing
+and coordination, not training length: a curriculum on the recharge rate, more own-share
+credit against the duplicates, or an intent/claim channel are the candidate next steps.
+
+**Cost.** The 500-satellite pod ran 7.1 h ($3.49) including the references on its CPU. A
+third 100-satellite seed (issue 34) was lost when its pod hit its hard cap while the
+session waited on a question; the chain had not been pulled.
