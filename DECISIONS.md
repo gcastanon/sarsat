@@ -1496,3 +1496,55 @@ credit against the duplicates, or an intent/claim channel are the candidate next
 **Cost.** The 500-satellite pod ran 7.1 h ($3.49) including the references on its CPU. A
 third 100-satellite seed (issue 34) was lost when its pod hit its hard cap while the
 session waited on a question; the chain had not been pulled.
+
+## Issue 38 - A fixed adversarial episode: two satellites, four targets
+
+**Question.** What is the smallest scenario on which the four reference policies of issue 22
+separate, and can a learner match `coop_plan` on it?
+
+**Decision.** `sarsat.fixed.FixedSarSat` / `FixedCoopSarSat` start every episode, whatever
+the reset key, from a scenario file: circular orbital elements and initial charge per
+satellite, position and priority per target. The file's `environment` block must agree with
+`sense_cost`, `recharge_rate`, `time_limit` and `step_seconds`, which default to it; with
+`hotspots` set, the file's first targets are the hotspot (event) targets the coop look-ahead
+tracks. The coop MAPX factory builds `FixedCoopSarSat` when the scenario has a
+`scenario_file` key. `scripts/adversarial_scenario.py` writes
+`scenarios/adversarial_pair.json`: two satellites 3 s apart in one plane (the same view),
+sense cost 0.5, initial charge 0.55, recharge 0.001 (one look each in the 10-step episode),
+two events T1, T2 (priority 3) visible only at step 6 and two low-priority targets J1, J2
+(priority 1) visible at steps 2-3, each target in a beam of its own. It attacks each
+policy's blind spot: greedy_beam looks at once and both satellites take J1; coop_dedup
+splits J1/J2; solo_plan waits but both take T1; coop_plan waits and splits T1/T2.
+
+| policy | return |
+|---|---|
+| `greedy_beam` | 0.125 |
+| `coop_dedup` | 0.25 |
+| `solo_plan` | 0.375 |
+| `coop_plan` | 0.75 |
+
+With low priority j and event priority t the four returns are j, 2j, t and 2t; the planners
+skip the low targets when j < t/2. One satellite cannot separate them (dedup is then greedy
+and coop_plan is solo_plan). The initial charge is below 0.9 because the planners always look
+when their charge is at least 0.9. The same returns hold on orbit draws 0-3 of the generator.
+
+**Optimum.** `scripts/adversarial_bruteforce.py` executes all 361 joint plans (up to two
+looks per satellite, beams centred on targets) through `SarSat.step`; no beam can hold two
+targets, so these cover every imaged set. The best is 0.75, reached only by T1 and T2 at
+step 6 in either order; no plan asking for a second look beats 0.5 (the battery refuses it).
+`coop_plan` is optimal here, so a learner can tie it but not beat it.
+
+**Consequences.** Training scenario `sarsat-adversarial-pair` (coop env only). The two
+satellites share parameters and see near-identical observations; `ranked_contention` is
+what tells them apart. A CPU smoke test reached 0.375 (solo_plan's split failure) after 20
+updates.
+
+**MAPPO** (one A40, the three runs sharing it, `launch.sh` recipe: slot-mixture head, ranked
+contention, 32 envs, 1500 updates, ~880 s each; $0.30 for the pod). Every run reaches the
+optimum: credit_mix 0.5 on seeds 42 and 11 from the third greedy evaluation (update ~90; the
+first two read 0.375, solo_plan's both-take-T1 failure), pure team reward (credit_mix 0)
+from the first, and all three hold 0.75 through evaluation 50 and on `eval_checkpoint.py`
+(seeds 0-7, all the same episode). With two agents the team reward is not diluted, which is
+why credit mixing, indispensable on the 100-satellite modes field (issue 34), is not needed
+here; ranked contention is enough to break the satellites' symmetry. Runs in
+`runs/adv_mappo_{s42,s11,team}` (git-ignored).

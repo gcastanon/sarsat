@@ -1,6 +1,6 @@
 # Status
 
-_Last updated: 2026-10-02 (issue 37). Read this first when picking the project up. Keep it
+_Last updated: 2026-10-21 (issue 38). Read this first when picking the project up. Keep it
 short and current: history lives in git, reasoning in DECISIONS.md, results in README.md._
 
 ## Where things live
@@ -96,6 +96,11 @@ short and current: history lives in git, reasoning in DECISIONS.md, results in R
   The live demo (sarsat-live, uncommitted there) runs `--scenario modes200` / `modes500`.
   Unfixed: single-mode `coop_dedup` / `coop_plan` let a satellite that cannot pay for a look
   claim its beam (issue 33).
+* **Adversarial pair** (issue 38). `sarsat.fixed` replays one hand-built episode from
+  `scenarios/adversarial_pair.json` (2 satellites, 4 targets): greedy_beam 0.125, coop_dedup
+  0.25, solo_plan 0.375, coop_plan 0.75 = the optimum by exhaustive enumeration
+  (`scripts/adversarial_bruteforce.py`). MAPPO (`sarsat-adversarial-pair`) reaches 0.75 within
+  ~90 updates on seeds 42 and 11 and with pure team reward.
 * **Side switch vs signed action encoding.** No training evidence either way (issue 21).
 * **Realism next steps.** Look-side switching is free (a roll cost or per-pass side
   would be more honest); reward is flat across the incidence band. Both are listed in

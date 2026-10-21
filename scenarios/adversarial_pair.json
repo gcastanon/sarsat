@@ -1,0 +1,322 @@
+{
+ "name": "sarsat-adversarial-pair",
+ "seed": 0,
+ "conventions": "Circular orbits; Earth-fixed frame at t=0 with Earth rotation folded into the node (raan drifts west at 7.2921e-5 rad/s, sarsat.orbits.satellite_frames). Step s is time s*60 s; a look chosen for step s is made at the step-s geometry.",
+ "environment": {
+  "step_seconds": 60.0,
+  "time_limit_steps": 10,
+  "sense_cost": 0.5,
+  "recharge_rate": 0.001,
+  "initial_battery": 0.55,
+  "incidence_deg": [
+   20.0,
+   45.0
+  ],
+  "max_squint_deg": 25.0,
+  "beam_half_width_deg": [
+   3.999999761581421,
+   3.999999761581421
+  ],
+  "reward": "sum of priorities of targets imaged (once each); priorities sum to 1"
+ },
+ "satellites": [
+  {
+   "id": 0,
+   "altitude_km": 557.8833,
+   "radius_km": 6928.88330078125,
+   "inclination_deg": 49.814300537109375,
+   "raan_deg": 270.58978271484375,
+   "arg_latitude_deg_t0": 342.5870666503906,
+   "mean_motion_rad_s": 0.0010946468682959676,
+   "subsatellite_lat_lon_deg_t0": [
+    -13.21575,
+    -100.85085
+   ],
+   "initial_battery": 0.55
+  },
+  {
+   "id": 1,
+   "altitude_km": 557.8833,
+   "radius_km": 6928.88330078125,
+   "inclination_deg": 49.814300537109375,
+   "raan_deg": 270.58978271484375,
+   "arg_latitude_deg_t0": 342.39892578125,
+   "mean_motion_rad_s": 0.0010946468682959676,
+   "subsatellite_lat_lon_deg_t0": [
+    -13.3566,
+    -100.97903
+   ],
+   "initial_battery": 0.55
+  }
+ ],
+ "targets": [
+  {
+   "name": "T1",
+   "lat_deg": 1.9926,
+   "lon_deg": -88.76596,
+   "priority": 0.375,
+   "priority_raw": 3.0,
+   "access_windows": [
+    {
+     "satellite": 0,
+     "steps": [
+      6
+     ],
+     "time_s": [
+      360.0
+     ],
+     "az_el_deg": [
+      [
+       4.004,
+       -23.974
+      ]
+     ]
+    },
+    {
+     "satellite": 1,
+     "steps": [
+      6
+     ],
+     "time_s": [
+      360.0
+     ],
+     "az_el_deg": [
+      [
+       4.01,
+       -22.206
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "T2",
+   "lat_deg": 2.11449,
+   "lon_deg": -87.02248,
+   "priority": 0.375,
+   "priority_raw": 3.0,
+   "access_windows": [
+    {
+     "satellite": 0,
+     "steps": [
+      6
+     ],
+     "time_s": [
+      360.0
+     ],
+     "az_el_deg": [
+      [
+       17.632,
+       -11.08
+      ]
+     ]
+    },
+    {
+     "satellite": 1,
+     "steps": [
+      6
+     ],
+     "time_s": [
+      360.0
+     ],
+     "az_el_deg": [
+      [
+       17.642,
+       -9.114
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "J1",
+   "lat_deg": -8.41529,
+   "lon_deg": -93.15179,
+   "priority": 0.125,
+   "priority_raw": 1.0,
+   "access_windows": [
+    {
+     "satellite": 0,
+     "steps": [
+      2,
+      3
+     ],
+     "time_s": [
+      120.0,
+      180.0
+     ],
+     "az_el_deg": [
+      [
+       30.107,
+       13.048
+      ],
+      [
+       31.484,
+       -20.26
+      ]
+     ]
+    },
+    {
+     "satellite": 1,
+     "steps": [
+      2,
+      3
+     ],
+     "time_s": [
+      120.0,
+      180.0
+     ],
+     "az_el_deg": [
+      [
+       30.084,
+       14.755
+      ],
+      [
+       31.519,
+       -18.693
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "J2",
+   "lat_deg": -5.06398,
+   "lon_deg": -97.62017,
+   "priority": 0.125,
+   "priority_raw": 1.0,
+   "access_windows": [
+    {
+     "satellite": 0,
+     "steps": [
+      2,
+      3
+     ],
+     "time_s": [
+      120.0,
+      180.0
+     ],
+     "az_el_deg": [
+      [
+       -26.947,
+       10.314
+      ],
+      [
+       -25.058,
+       -24.33
+      ]
+     ]
+    },
+    {
+     "satellite": 1,
+     "steps": [
+      2,
+      3
+     ],
+     "time_s": [
+      120.0,
+      180.0
+     ],
+     "az_el_deg": [
+      [
+       -26.93,
+       12.123
+      ],
+      [
+       -25.093,
+       -22.758
+      ]
+     ]
+    }
+   ]
+  }
+ ],
+ "reference_results": {
+  "greedy_beam": {
+   "return": 0.125,
+   "events": [
+    {
+     "step": 2,
+     "looking": [
+      0,
+      1
+     ],
+     "imaged": [
+      "J1"
+     ]
+    },
+    {
+     "step": 3,
+     "looking": [
+      0,
+      1
+     ],
+     "imaged": []
+    },
+    {
+     "step": 6,
+     "looking": [
+      0,
+      1
+     ],
+     "imaged": []
+    }
+   ]
+  },
+  "coop_dedup": {
+   "return": 0.25,
+   "events": [
+    {
+     "step": 2,
+     "looking": [
+      0,
+      1
+     ],
+     "imaged": [
+      "J1",
+      "J2"
+     ]
+    },
+    {
+     "step": 6,
+     "looking": [
+      0,
+      1
+     ],
+     "imaged": []
+    }
+   ]
+  },
+  "solo_plan": {
+   "return": 0.375,
+   "events": [
+    {
+     "step": 6,
+     "looking": [
+      0,
+      1
+     ],
+     "imaged": [
+      "T1"
+     ]
+    }
+   ]
+  },
+  "coop_plan": {
+   "return": 0.75,
+   "events": [
+    {
+     "step": 6,
+     "looking": [
+      0,
+      1
+     ],
+     "imaged": [
+      "T1",
+      "T2"
+     ]
+    }
+   ]
+  }
+ }
+}

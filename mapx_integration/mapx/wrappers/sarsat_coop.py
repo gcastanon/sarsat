@@ -38,6 +38,7 @@ from omegaconf import DictConfig, OmegaConf
 
 from sarsat.announce import AnnouncedCoopSarSat
 from sarsat.coop import CoopSarSat, CoopState
+from sarsat.fixed import FixedCoopSarSat
 from sarsat.quality import QualityCoopSarSat, WindowedQualityCoopSarSat
 from sarsat.windows import WindowedCoopSarSat
 
@@ -209,6 +210,11 @@ def make_sarsat_coop_envs(
         if env_cls is AnnouncedCoopSarSat:
             raise NotImplementedError("quality requirements are not combined with announcements")
         env_cls = WindowedQualityCoopSarSat if env_cls is WindowedCoopSarSat else QualityCoopSarSat
+    # A scenario file fixes the episode (sarsat.fixed); it combines with neither of the above.
+    if "scenario_file" in kwargs:
+        if env_cls is not CoopSarSat:
+            raise NotImplementedError("a fixed scenario takes no windows or quality keys")
+        env_cls = FixedCoopSarSat
     train_env, eval_env = env_cls(**kwargs), env_cls(**kwargs)
     if "network" in config:
         for net in ("actor_network", "critic_network"):

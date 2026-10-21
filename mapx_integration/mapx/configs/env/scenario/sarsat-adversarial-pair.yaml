@@ -1,0 +1,20 @@
+# SarSat adversarial pair (sarsat.fixed.FixedCoopSarSat): one fixed 10-step episode from
+# scenarios/adversarial_pair.json, every reset the same. Two satellites 3 s apart in one
+# plane (the same view), one look of charge each (sense cost 0.5, start 0.55, recharge
+# 0.001), two low-priority targets visible at steps 2-3 and two events of three times
+# their priority visible only at step 6, each target in a beam of its own. greedy_beam
+# 0.125, coop_dedup 0.25, solo_plan 0.375, coop_plan 0.75, which is the optimum (all 361
+# joint plans enumerated by scripts/adversarial_bruteforce.py; DECISIONS.md issue 38).
+# The two events are the file's first targets, so they are the hotspot clusters the
+# observation's look-ahead tracks. CoopSarSat only (env=sarsat_coop, the launch.sh default).
+name: SarSat
+task_name: sarsat-adversarial-pair
+task_config:
+  scenario_file: scenarios/adversarial_pair.json
+  num_satellites: 2
+  max_targets: 4
+  hotspots: 2
+  hotspot_targets: 1
+  time_limit: 10
+  sense_cost: 0.5
+  recharge_rate: 0.001
