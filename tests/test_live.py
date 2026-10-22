@@ -173,6 +173,29 @@ def test_request_injection_is_visible_to_the_lookahead() -> None:
     np.testing.assert_array_equal(rebuilt.team_future, state.team_future)
 
 
+def test_request_field_is_deterministic_unless_scattered() -> None:
+    """Every slot sits on the point by default, so two worlds build the same field for the
+    same request (what a forecast of a provisional request relies on); ``request_scatter``
+    restores the random spread of the other slots."""
+    fields = []
+    for _ in range(2):
+        world = LiveWorld(_env(), seed=SEED)
+        r = world.inject_request(10.0, 20.0, "normal", 12)
+        slots = r.cluster + world.C * np.arange(world.K)
+        fields.append(np.asarray(world.state.target_latlon)[slots])
+    np.testing.assert_array_equal(fields[0], fields[1])
+    np.testing.assert_allclose(fields[0], [[10.0, 20.0]] * world.K, atol=1e-5)
+
+    world = LiveWorld(_env(), seed=SEED, request_scatter=1.0)
+    r = world.inject_request(10.0, 20.0, "normal", 12)
+    slots = r.cluster + world.C * np.arange(world.K)
+    spread = np.asarray(world.state.target_latlon)[slots]
+    np.testing.assert_allclose(spread[0], [10.0, 20.0], atol=1e-5)
+    assert np.abs(spread[1:] - [10.0, 20.0]).max() > 0.01  # the rest are scattered
+    with pytest.raises(ValueError):
+        LiveWorld(_env(), seed=SEED, request_scatter=-1.0)
+
+
 def test_feasibility_matches_visibility() -> None:
     env = _env()
     world = LiveWorld(env, seed=SEED)

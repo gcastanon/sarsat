@@ -1548,3 +1548,48 @@ from the first, and all three hold 0.75 through evaluation 50 and on `eval_check
 why credit mixing, indispensable on the 100-satellite modes field (issue 34), is not needed
 here; ranked contention is enough to break the satellites' symmetry. Runs in
 `runs/adv_mappo_{s42,s11,team}` (git-ignored).
+
+## Issue 39 - Requests as one point: no scatter
+
+**Question.** A live request becomes the 50 slots of an event cluster so the look-ahead
+values it like a training event (issue 28), the first slot exactly at the point and the other
+49 scattered by 12-20 km from a numpy draw. The forecast view planned for the demo (a
+provisional request is forecast, then submitted or dropped) needs the submitted field to be
+the field that was forecast. With a random scatter it is not: the second draw differs, every
+agent's observation differs, and the forecast can disagree with what happens. Can the scatter
+go without the policy noticing?
+
+**Decision.** `LiveWorld(request_scatter=0.0)` is the default: every slot sits on the point,
+no draw is made, and the field is a pure function of (lat, lon, priority, quality). The
+look-ahead still reads a full cluster (`remaining` = 1), one look collects the request (the
+operational meaning of a request), and the cluster slot is still the one `_choose_cluster`
+picks. `request_scatter=1.0` restores the former spread (`PRIORITY_SIGMA_KM` scaled). A
+request literally one active slot was not an option without retraining: the look-ahead would
+read `active/50` = 0.02 and no satellite would steer toward it (issue 28's note).
+
+**Measurement.** Paired on the Windows CPU (`sarsat_live.policy` scenarios, their default
+snapshots), the same seeds, request points and steps for both scatters, 10 normal requests per
+episode with a 30-step deadline, 4 episodes per seed:
+
+| scenario | scatter | requests collected | steps to collection (median) | episode returns | imaged event fraction |
+|---|---|---|---|---|---|
+| events500, seed 1000 | 1.0 | 40/40 | 3 | 0.930, 0.822, 0.814, 0.786 | 0.886, 0.844, 0.846, 0.812 |
+| events500, seed 1000 | 0.0 | 40/40 | 3 | 0.930, 0.827, 0.812, 0.791 | 0.887, 0.849, 0.844, 0.817 |
+| events500, seed 1001 | 1.0 | 37/37 | 3 | 0.941, 0.807, 0.779, 0.775 | 0.915, 0.825, 0.805, 0.794 |
+| events500, seed 1001 | 0.0 | 37/37 | 3 | 0.941, 0.808, 0.780, 0.775 | 0.915, 0.825, 0.806, 0.791 |
+| modes500, seed 1000 | 1.0 | 40/40 | 3 | 0.632, 0.482, 0.536, 0.518 | 0.604, 0.499, 0.579, 0.556 |
+| modes500, seed 1000 | 0.0 | 40/40 | 2 | 0.633, 0.484, 0.541, 0.516 | 0.603, 0.500, 0.584, 0.552 |
+| modes500, seed 1001 | 1.0 | 37/38 | 2 | 0.585, 0.526, 0.475, 0.468 | 0.558, 0.553, 0.505, 0.490 |
+| modes500, seed 1001 | 0.0 | 38/38 | 2 | 0.586, 0.528, 0.479, 0.484 | 0.558, 0.555, 0.509, 0.509 |
+
+Requests are collected on the same pass either way (the median wait is the first access or
+the pass after it); the one request the spread missed (modes500, seed 1001) the point
+collects. Returns and imaged fractions move by at most 0.005 on events500 and 0.016 on
+modes500 (one episode; the rest within 0.005), with no direction, which is the run-to-run
+noise of a changed field. The step time is unchanged (16-18 s per 180-step episode, 500
+satellites, CPU).
+
+**Consequences.** The sarsat-live server and soak need no change (the default applies); the
+former behaviour is one constructor argument away. `tests/test_live.py` pins the field to
+the point and the determinism across worlds. The RNG stream of `LiveWorld` is no longer
+advanced by requests, so episode draws after a request are the same as without it.

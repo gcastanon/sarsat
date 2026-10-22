@@ -11,9 +11,12 @@ the training rules -- and the caller resets the policy's recurrent state. Inside
 the policy sees exactly what it saw in training.
 
 Live requests (:meth:`LiveWorld.inject_request`) take over an event cluster whose window has
-closed: all ``hotspot_targets`` of its slots are placed at the requested point (the first
-exactly there, the rest scattered by a few km) so the cluster look-ahead values it like a
-training event, with a window of at most ``deadline`` steps. A request whose window would
+closed: all ``hotspot_targets`` of its slots are placed at the requested point so the cluster
+look-ahead values it like a training event, with a window of at most ``deadline`` steps. By
+default every slot sits exactly on the point, so one look collects the request and the field
+is a pure function of the request (no random draw: a forecast of the request and its
+submission build the same field); ``request_scatter=1.0`` restores the former spread of the
+other slots by a few km (DECISIONS.md issue 39). A request whose window would
 outlive the episode is clipped at the time limit and carried into the next episode, so the
 policy never sees an access past the limit (it never did in training).
 
@@ -45,7 +48,8 @@ from sarsat.windows import WindowedCoopSarSat, WindowedCoopState, WindowedState
 TWO_PI = 2.0 * math.pi
 
 # How a request's priority level maps onto the field: the weight relative to one event
-# target (never above 1: ``max(priority)`` scales the whole observation) and the scatter of
+# target (never above 1: ``max(priority)`` scales the whole observation) and, scaled by
+# ``LiveWorld.request_scatter`` (0 by default: no spread), the one-sigma scatter of
 # the cluster around the point (smaller = one look takes all of it).
 PRIORITY_WEIGHT = {"low": 0.5, "normal": 1.0, "high": 1.0}
 PRIORITY_SIGMA_KM = {"low": 20.0, "normal": 20.0, "high": 12.0}
@@ -127,14 +131,22 @@ class LiveWorld:
         seed: int = 0,
         schedule_rows_per_step: int = 10,
         boundary_battery: str = "carry",
+        request_scatter: float = 0.0,
     ) -> None:
         """``boundary_battery``: ``carry`` keeps each satellite's charge across the episode
         boundary (the honest continuous world; the trained policy ends episodes nearly empty
         at a 5% duty cycle, which costs the next episode a few percent), ``full`` recharges
-        every satellite at the boundary, as a training reset does."""
+        every satellite at the boundary, as a training reset does.
+
+        ``request_scatter`` scales ``PRIORITY_SIGMA_KM``, the spread of a request's slots
+        around its point: 0 (the default) puts every slot on the point, so the field is
+        deterministic and one look collects the request; 1 is the former 12-20 km spread."""
         if boundary_battery not in ("carry", "full"):
             raise ValueError("boundary_battery must be 'carry' or 'full'")
+        if request_scatter < 0:
+            raise ValueError("request_scatter must be >= 0")
         self.boundary_battery = boundary_battery
+        self.request_scatter = float(request_scatter)
         self.env = env
         self.T = int(env.time_limit)
         self.C = int(env.num_clusters)
@@ -195,7 +207,9 @@ class LiveWorld:
         fired and where, and the geometry to draw them (as ``sarsat.evaluate.run_episode``
         recomputes from ``_apply_action`` inside its own jitted step)."""
         env = self.env
-        pointing, mode, sensing, in_beam = env.resolve_look(state, action, state.body, state.visible)
+        pointing, mode, sensing, in_beam = env.resolve_look(
+            state, action, state.body, state.visible
+        )
         state, reward, _, _ = env.transition_with_credit(state, action)
         state = env.refresh(state)
         obs = env.observe(state)
@@ -400,9 +414,12 @@ class LiveWorld:
 
     def _request_field(self, r: Request, state) -> Tuple[jax.Array, jax.Array]:
         """The ``(K, 2)`` points and ``(K,)`` priorities that stand in for a request."""
-        sigma_deg = PRIORITY_SIGMA_KM[r.priority] / 111.0
-        scatter = self.rng.normal(size=(self.K, 2)) * sigma_deg
-        scatter[0] = 0.0
+        sigma_deg = self.request_scatter * PRIORITY_SIGMA_KM[r.priority] / 111.0
+        if sigma_deg > 0.0:
+            scatter = self.rng.normal(size=(self.K, 2)) * sigma_deg
+            scatter[0] = 0.0
+        else:
+            scatter = np.zeros((self.K, 2))  # no draw: the field is a function of the request
         lat = np.clip(r.lat + scatter[:, 0], -89.0, 89.0)
         lon = r.lon + scatter[:, 1] / np.cos(np.deg2rad(lat))
         lon = (lon + 180.0) % 360.0 - 180.0
