@@ -1,0 +1,37 @@
+# SarSat collection-modes scenario (sarsat.quality.QualitySarSat): the sarsat-100sat-hotspots
+# field (100 satellites in 10 Walker planes, 6000 background targets, 40 hotspots of 50 at
+# priority x10, here of 30 km one-sigma radius rather than 100 so one wide swath can hold
+# most of a cluster) where each satellite chooses one of four SAR modes per look and each
+# target requires a minimum image quality (radar-NIIRS-like). Each hotspot cluster draws one
+# level, so some events want ScanSAR's wide, coarse swath, some stripmap and others one
+# spotlight or staring look per target; background targets mostly want stripmap, the
+# cheapest mode that meets them. Mode figures are rough public numbers at physical beam
+# sizes; the broadside strip modes get the +-20 degree squint their along-track sweep spans
+# in one 60 s step (DECISIONS.md issue 32).
+# CoopSarSat's beam slots model the modes, and the slot-mixture head looks in the chosen
+# slot's mode (issue 33).
+name: SarSat
+task_name: sarsat-100sat-modes
+task_config:
+  num_satellites: 100
+  max_targets: 8000
+  hotspots: 40
+  hotspot_targets: 50
+  hotspot_weight: 10.0
+  hotspot_radius_km: 30.0
+  planes: 10
+  hotspot_quality: [1.0, 3.0, 5.0, 7.0]       # ScanSAR, stripmap, spotlight, staring grade
+  background_quality: [1.0, 3.0, 5.0]
+  background_quality_weights: [0.4, 0.4, 0.2]
+  # Cheapest first, so the greedy reference picks the cheapest mode that is good enough.
+  # beam_half_width_deg is (cross-track, squint): about 0.036 deg per km of swath width and
+  # 0.043 deg per km of scene length at ~550 km.
+  modes:
+    - {name: stripmap, sense_cost: 0.10, quality: 3.5, duration_s: 10.0,
+       incidence_deg: [20.0, 45.0], max_squint_deg: 20.0, beam_half_width_deg: [1.0, 2.0]}
+    - {name: spotlight, sense_cost: 0.13, quality: 5.0, duration_s: 10.0,
+       incidence_deg: [15.0, 55.0], max_squint_deg: 25.0, beam_half_width_deg: [0.2, 0.2]}
+    - {name: scansar, sense_cost: 0.20, quality: 1.5, duration_s: 25.0,
+       incidence_deg: [20.0, 45.0], max_squint_deg: 20.0, beam_half_width_deg: [3.6, 4.0]}
+    - {name: staring, sense_cost: 0.30, quality: 7.0, duration_s: 45.0,
+       incidence_deg: [20.0, 50.0], max_squint_deg: 15.0, beam_half_width_deg: [0.15, 0.15]}

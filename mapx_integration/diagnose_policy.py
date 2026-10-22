@@ -32,9 +32,14 @@ it, the battery satellites had when an event first came into their reach, and ho
 hotspot priority was reachable by some charged satellite during its window but never
 imaged.
 
+On collection-modes scenarios (``sarsat-100sat-modes``) it also reports honoured looks per
+mode for every policy, and reads slot widths from the env (``slot_dim``). ``SARSAT_HEAD``
+must match the run's training (``mixture`` rebuilds ``SlotMixtureHead``, as in
+``eval_checkpoint.py``; omit it for the anchored head).
+
 Must run on CPU -- the GPU is reserved for training:
 
-    JAX_PLATFORMS=cpu python diagnose_policy.py \\
+    SARSAT_HEAD=mixture JAX_PLATFORMS=cpu python diagnose_policy.py \\
         --run-dir ~/marl/runs/mappo_v1 --system mappo \\
         --seeds 1000,1003,1009 --out ~/marl/runs/mappo_v1/diagnosis.json
 """
@@ -108,6 +113,14 @@ def _sarsat_only_kwargs(merged: Dict[str, Any]) -> Dict[str, Any]:
     allowed = set(inspect.signature(SarSat.__init__).parameters) - {"self"}
     # announce_lead_s is left out: announcements change no dynamics (sarsat.announce).
     allowed |= {"window_steps", "background_windows", "background_window_steps"}
+    # Quality requirements (sarsat.quality, DECISIONS.md issue 32); run_reference then builds
+    # QualitySarSat.
+    allowed |= {
+        "hotspot_quality",
+        "hotspot_quality_weights",
+        "background_quality",
+        "background_quality_weights",
+    }
     return {k: v for k, v in merged.items() if k in allowed}
 
 
@@ -183,7 +196,24 @@ def _new_agg() -> Dict[str, Any]:
         battery_open_sum=0.0,
         battery_open_n=0,
         event_value_lost=0.0,
+        # Honoured looks per collection mode (index = mode); only filled and reported when
+        # the scenario defines modes (env._mode_flags).
+        mode_looks=None,
     )
+
+
+def _count_mode_looks(agg: Dict[str, Any], env, mode_np, sensing_np) -> None:
+    """Add this step's honoured looks to ``agg["mode_looks"]`` by mode (count of
+    ``sensing`` per ``mode`` from ``resolve_look``); a no-op for single-mode scenarios."""
+    import numpy as np
+
+    if not env._mode_flags:
+        return
+    if agg["mode_looks"] is None:
+        agg["mode_looks"] = [0] * env.num_modes
+    counts = np.bincount(np.asarray(mode_np)[np.asarray(sensing_np, bool)], minlength=env.num_modes)
+    for k in range(env.num_modes):
+        agg["mode_looks"][k] += int(counts[k])
 
 
 def _bucket_value(v: float) -> int:
@@ -203,6 +233,7 @@ def _finalize(
     background_total: float,
     sense_cost: float,
     num_agents: int,
+    mode_names: Optional[tuple] = None,
 ) -> Dict[str, Any]:
     honoured = agg["honoured_looks"]
     battery_n = max(agg["battery_n"], 1)
@@ -254,6 +285,9 @@ def _finalize(
             agg["event_value_lost"] / hotspot_total if hotspot_total else None
         ),
     )
+    if mode_names:
+        counts = agg["mode_looks"] or [0] * len(mode_names)
+        out["looks_by_mode"] = dict(zip(mode_names, counts))
     total_sensing_diag = sum(agg["slot_match"].values())
     if total_sensing_diag:
         out["slot_match"] = agg["slot_match"]
@@ -294,9 +328,6 @@ def run_trained(
     from mapx.networks import ScannedRNN
     from mapx.wrappers.sarsat_coop import make_sarsat_coop_envs
 
-    from sarsat.coop import SLOT_DIM
-    from sarsat.orbits import in_az_el_box
-
     run_dir = os.path.abspath(os.path.expanduser(run_dir))
     model_name = f"rec_{system}"
     cfg = OmegaConf.load(ec.find_hydra_config(run_dir))
@@ -322,24 +353,22 @@ def run_trained(
     num_slots = coop_env.num_slots
     num_hot = coop_env.hotspots * coop_env.hotspot_targets
     sense_cost = coop_env.sense_cost
+    slot_dim = coop_env.slot_dim  # 8 (9 windowed) + one-hot modes when the scenario has modes
+    mode_names = tuple(m.name for m in coop_env.modes) if coop_env._mode_flags else None
 
     actor_network = ec.build_actor(cfg, eval_env)
     eval_act_fn = make_rec_eval_act_fn(actor_network.apply, cfg)
 
     def make_step():
         def step(state, action):
-            pointing = coop_env._decode_pointing(state.orbit, action[:, : coop_env._pointing_dim])
-            sensing = (action[:, coop_env._pointing_dim] > 0.5) & coop_env._can_sense(state.battery)
-            lower = (pointing - coop_env._beam_half_width)[:, None, :]
-            upper = (pointing + coop_env._beam_half_width)[:, None, :]
-            in_beam = state.visible & sensing[:, None] & in_az_el_box(state.body, lower, upper)
+            _, mode, sensing, in_beam = coop_env.resolve_look(
+                state, action, state.body, state.visible
+            )
             imaged = jnp.any(in_beam, axis=0)
             reward = jnp.sum(jnp.where(imaged, state.target_priority, 0.0))
             battery_pre = state.battery
             new_step = state.step + 1
-            new_battery = jnp.clip(
-                state.battery + coop_env.recharge_rate - coop_env.sense_cost * sensing, 0.0, 1.0
-            )
+            new_battery = coop_env.next_battery(state.battery, mode, sensing)
             mid_state = state._replace(
                 step=new_step, battery=new_battery, target_active=state.target_active & ~imaged
             )
@@ -347,7 +376,10 @@ def run_trained(
             last = all_imaged | (mid_state.step >= coop_env.time_limit)
             new_state, timestep = coop_env.make_timestep(mid_state, reward, all_imaged, last)
             hits = jnp.sum(in_beam, axis=0)
-            return new_state, timestep, sensing, in_beam, imaged, reward, battery_pre, hits, last
+            return (
+                new_state, timestep, sensing, in_beam, imaged, reward, battery_pre, hits, last,
+                mode,
+            )
 
         return jax.jit(step)
 
@@ -382,7 +414,7 @@ def run_trained(
         action = action[0]
         action_np = np.asarray(action)
 
-        state, ts, sensing, in_beam, imaged, reward, battery_pre, hits, last = step_fn(
+        state, ts, sensing, in_beam, imaged, reward, battery_pre, hits, last, mode = step_fn(
             state, action
         )
 
@@ -409,6 +441,7 @@ def run_trained(
 
         honoured_t = int(sensing_np.sum())
         agg["honoured_looks"] += honoured_t
+        _count_mode_looks(agg, coop_env, mode, sensing_np)
         any_hit = in_beam_np.any(axis=1)
         hotspot_hit = in_beam_np[:, :num_hot].any(axis=1)
         sensing_idx = np.flatnonzero(sensing_np)
@@ -453,7 +486,7 @@ def run_trained(
         for n in sensing_idx:
             best_dist, best_k = np.inf, -1
             for k in range(num_slots):
-                base = k * SLOT_DIM
+                base = k * slot_dim
                 if agents_view[n, base] <= 0.5:
                     continue
                 d = float(np.linalg.norm(own_point[n] - agents_view[n, base + 1 : base + 4]))
@@ -476,7 +509,9 @@ def run_trained(
         lost_mask = reachable_charged & final_active_hot
         agg["event_value_lost"] = float(priority_np[:num_hot][lost_mask].sum())
     return (
-        _finalize(agg, unit, hotspot_total, background_total, sense_cost, num_agents),
+        _finalize(
+            agg, unit, hotspot_total, background_total, sense_cost, num_agents, mode_names
+        ),
         int(ckpt_step),
         checkpoint_dir,
     )
@@ -492,33 +527,40 @@ def run_reference(policy: str, seed: int, scenario_kwargs: Dict[str, Any]) -> Di
     # REQUIRED at 200 satellites: the default float64 (T, N, M) tables reach ~16 GB for
     # solo_plan/coop_plan's precompute. Must happen before any ReferenceController that
     # needs it (greedy_beam never calls precompute).
-    reference_module.precompute = lean_precompute
+    # sarsat.reference's own lean tables: the same values as this module's lean_precompute,
+    # and mode-aware (access some mode can serve, values scaled by mode cost; issue 33).
+    reference_module.precompute = reference_module.lean_precompute
 
+    from sarsat.quality import QualitySarSat, WindowedQualitySarSat
     from sarsat.reference import ReferenceController
     from sarsat.windows import WindowedSarSat
 
-    env = WindowedSarSat(**scenario_kwargs)  # == SarSat unless scenario sets window_steps
+    if any(k.endswith("_quality") for k in scenario_kwargs):
+        cls = WindowedQualitySarSat if "window_steps" in scenario_kwargs else QualitySarSat
+        env = cls(**scenario_kwargs)  # quality requirements (with windows: issue 35)
+    else:
+        env = WindowedSarSat(**scenario_kwargs)  # == SarSat unless scenario sets window_steps
     num_hot = env.hotspots * env.hotspot_targets
     sense_cost = env.sense_cost
     num_agents = env.num_agents
+    mode_names = tuple(m.name for m in env.modes) if env._mode_flags else None
 
     def make_step():
         def step(state, action):
             step_i = state.step + 1
-            _pointing, sensing, in_beam = env._apply_action(state, step_i, action)
+            body, visible = env._target_geometry(state, step_i)
+            _, mode, sensing, in_beam = env.resolve_look(state, action, body, visible)
             imaged = jnp.any(in_beam, axis=0)
             reward = jnp.sum(jnp.where(imaged, state.target_priority, 0.0))
             battery_pre = state.battery
-            new_battery = jnp.clip(
-                state.battery + env.recharge_rate - env.sense_cost * sensing, 0.0, 1.0
-            )
+            new_battery = env.next_battery(state.battery, mode, sensing)
             new_state = state._replace(
                 step=step_i, battery=new_battery, target_active=state.target_active & ~imaged
             )
             all_imaged = ~jnp.any(new_state.target_active)
             last = all_imaged | (step_i >= env.time_limit)
             hits = jnp.sum(in_beam, axis=0)
-            return new_state, sensing, in_beam, imaged, reward, battery_pre, hits, last
+            return new_state, sensing, in_beam, imaged, reward, battery_pre, hits, last, mode
 
         return jax.jit(step)
 
@@ -542,7 +584,9 @@ def run_reference(policy: str, seed: int, scenario_kwargs: Dict[str, Any]) -> Di
 
     for t in range(1, env.time_limit + 1):
         action = controller(state)
-        state, sensing, in_beam, imaged, reward, battery_pre, hits, last = step_fn(state, action)
+        state, sensing, in_beam, imaged, reward, battery_pre, hits, last, mode = step_fn(
+            state, action
+        )
 
         sensing_np = np.asarray(sensing)
         in_beam_np = np.asarray(in_beam)
@@ -569,6 +613,7 @@ def run_reference(policy: str, seed: int, scenario_kwargs: Dict[str, Any]) -> Di
         hotspot_hit = in_beam_np[:, :num_hot].any(axis=1)
         sensing_idx = np.flatnonzero(sensing_np)
         agg["honoured_looks"] += len(sensing_idx)
+        _count_mode_looks(agg, env, mode, sensing_np)
         for n in sensing_idx:
             if not any_hit[n]:
                 agg["empty_looks"] += 1
@@ -602,7 +647,9 @@ def run_reference(policy: str, seed: int, scenario_kwargs: Dict[str, Any]) -> Di
         final_active_hot = np.asarray(state.target_active[:num_hot])
         lost_mask = reachable_charged & final_active_hot
         agg["event_value_lost"] = float(priority_np[:num_hot][lost_mask].sum())
-    return _finalize(agg, unit, hotspot_total, background_total, sense_cost, num_agents)
+    return _finalize(
+        agg, unit, hotspot_total, background_total, sense_cost, num_agents, mode_names
+    )
 
 
 def run_seed(args) -> Dict[str, Any]:
@@ -688,6 +735,23 @@ def print_window_table(rows: List[Dict[str, Any]], title: str) -> None:
             )
 
 
+def print_mode_table(rows: List[Dict[str, Any]], title: str) -> None:
+    """Honoured looks per collection mode, per policy (only for scenarios with modes)."""
+    names = list(rows[0]["trained"]["looks_by_mode"])
+    header = f"{'seed':>6} {'policy':>12} " + " ".join(f"{n:>12}" for n in names)
+    print(f"\n== {title} ==")
+    print(header)
+    print("-" * len(header))
+    for row in rows:
+        for pol in POLICY_NAMES:
+            looks = row[pol]["looks_by_mode"]
+            cells = " ".join(
+                f"{looks[n]:>12.1f}" if isinstance(looks[n], float) else f"{looks[n]:>12d}"
+                for n in names
+            )
+            print(f"{row['seed']:>6} {pol:>12} {cells}")
+
+
 def average_rows(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     """Average every numeric field across seeds, per policy."""
     numeric_keys = [
@@ -730,6 +794,11 @@ def average_rows(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
                 if v["cumulative_return_at"].get(ck) is not None
             ]
             avg["cumulative_return_at"][ck] = sum(xs) / len(xs) if xs else None
+        if vals[0].get("looks_by_mode"):
+            avg["looks_by_mode"] = {
+                n: sum(v["looks_by_mode"][n] for v in vals) / len(vals)
+                for n in vals[0]["looks_by_mode"]
+            }
         out[pol] = avg
     return out
 
@@ -823,6 +892,10 @@ def main() -> None:
 
     print_window_table(results, "window-aware diagnostics, per-seed")
     print_window_table([avg], "window-aware diagnostics, averaged across seeds")
+
+    if results[0]["trained"].get("looks_by_mode"):
+        print_mode_table(results, "honoured looks by collection mode, per-seed")
+        print_mode_table([avg], "honoured looks by collection mode, averaged across seeds")
 
     print("\n== trained-policy pointing diagnostics (averaged) ==")
     for r in results:

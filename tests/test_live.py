@@ -173,6 +173,29 @@ def test_request_injection_is_visible_to_the_lookahead() -> None:
     np.testing.assert_array_equal(rebuilt.team_future, state.team_future)
 
 
+def test_request_field_is_deterministic_unless_scattered() -> None:
+    """Every slot sits on the point by default, so two worlds build the same field for the
+    same request (what a forecast of a provisional request relies on); ``request_scatter``
+    restores the random spread of the other slots."""
+    fields = []
+    for _ in range(2):
+        world = LiveWorld(_env(), seed=SEED)
+        r = world.inject_request(10.0, 20.0, "normal", 12)
+        slots = r.cluster + world.C * np.arange(world.K)
+        fields.append(np.asarray(world.state.target_latlon)[slots])
+    np.testing.assert_array_equal(fields[0], fields[1])
+    np.testing.assert_allclose(fields[0], [[10.0, 20.0]] * world.K, atol=1e-5)
+
+    world = LiveWorld(_env(), seed=SEED, request_scatter=1.0)
+    r = world.inject_request(10.0, 20.0, "normal", 12)
+    slots = r.cluster + world.C * np.arange(world.K)
+    spread = np.asarray(world.state.target_latlon)[slots]
+    np.testing.assert_allclose(spread[0], [10.0, 20.0], atol=1e-5)
+    assert np.abs(spread[1:] - [10.0, 20.0]).max() > 0.01  # the rest are scattered
+    with pytest.raises(ValueError):
+        LiveWorld(_env(), seed=SEED, request_scatter=-1.0)
+
+
 def test_feasibility_matches_visibility() -> None:
     env = _env()
     world = LiveWorld(env, seed=SEED)
@@ -214,3 +237,172 @@ def test_request_spills_into_the_next_episode() -> None:
         world.step(_actions(env, jax.random.PRNGKey(700 + world.global_step), sense=False))
     assert request.status == "missed"
     assert world.global_step == request.close_global
+
+
+# ------------------------------------------------- collection modes and quality (issue 36)
+
+
+def _quality_env(**overrides):
+    from sarsat.quality import MODES, WindowedQualityCoopSarSat
+
+    kwargs = dict(
+        num_satellites=20,
+        max_targets=1000,
+        hotspots=10,
+        hotspot_targets=50,
+        hotspot_weight=10.0,
+        hotspot_radius_km=30.0,
+        planes=2,
+        window_steps=(5, 10),
+        background_windows=False,
+        recharge_rate=0.005,
+        time_limit=T,
+        ranked_contention=True,
+        hotspot_quality=(1.0, 3.0, 5.0, 7.0),
+        background_quality=(1.0, 3.0, 5.0),
+        modes=MODES,
+    )
+    return WindowedQualityCoopSarSat(**(kwargs | overrides))
+
+
+def _slot0_look(env, obs):
+    """Slot 0's pointing in slot 0's mode (the mode-aware greedy rule)."""
+    view = np.asarray(obs.agents_view)
+    slot = view[:, : env.slot_dim]
+    mode = np.argmax(slot[:, -env.num_modes :], axis=-1) + 1
+    look = np.where(slot[:, 0] > 0.5, mode, 0)
+    return jnp.asarray(np.concatenate([slot[:, 1:4], look[:, None]], axis=-1), jnp.float32)
+
+
+def test_quality_world_rolls_over_and_draws_each_mode_footprint() -> None:
+    env = _quality_env()
+    world = LiveWorld(env, seed=SEED)
+    quality0 = np.asarray(world.state.target_quality)
+    modes_seen, rolled = set(), False
+    for _ in range(T + 3):
+        res = world.step(_slot0_look(env, world.obs))
+        assert set(res.modes) == set(res.footprints)  # one mode per drawn footprint
+        modes_seen |= set(res.modes.values())
+        rolled |= res.new_episode
+    assert rolled and world.episode == 1
+    assert "quality" in world.target_table()
+    # Background targets that survived the boundary kept their requirement.
+    hot = env.num_clusters * env.hotspot_targets
+    table = world.target_table()
+    assert set(np.unique(table["quality"])) <= {1.0, 3.0, 5.0, 7.0}
+    assert quality0.shape == table["quality"].shape and hot < len(quality0)
+    assert len(modes_seen) >= 2
+
+
+def test_request_carries_its_quality_into_the_cluster() -> None:
+    env = _quality_env()
+    world = LiveWorld(env, seed=SEED)
+    r = world.inject_request(10.0, 20.0, quality=7.0)
+    slots = r.cluster + env.num_clusters * np.arange(env.hotspot_targets)
+    np.testing.assert_array_equal(np.asarray(world.state.target_quality)[slots], 7.0)
+    assert r.to_dict()["quality"] == 7.0
+    with pytest.raises(ValueError):
+        LiveWorld(_env(), seed=SEED).inject_request(10.0, 20.0, quality=7.0)
+
+
+# ------------------------------------------------------- forecasting (issue 40)
+
+
+def _state_equal(a, b):
+    for name, x, y in zip(a._fields, a, b, strict=True):
+        for lx, ly in zip(jax.tree.leaves(x), jax.tree.leaves(y), strict=True):
+            np.testing.assert_array_equal(lx, ly, err_msg=name)
+
+
+def test_preview_then_commit_is_inject() -> None:
+    """A previewed request leaves the world alone; committing it gives the world
+    ``inject_request`` would have, and a preview the world has moved past is refused."""
+    env = _env()
+    a, b = LiveWorld(env, seed=SEED), LiveWorld(env, seed=SEED)
+    for i in range(2):
+        act = _actions(env, jax.random.PRNGKey(900 + i), sense=False)
+        a.step(act)
+        b.step(act)
+    before = b.state
+    preview = b.preview_request(10.0, 20.0, "high", 12, text="t")
+    assert preview.request.status == "provisional" and b.requests == []
+    _state_equal(b.state, before)
+    ra = a.inject_request(10.0, 20.0, "high", 12, text="t")
+    rb = b.commit_request(preview)
+    assert rb.status == "pending" and rb.to_dict() == ra.to_dict()
+    _state_equal(a.state, b.state)
+    assert a.cluster_windows().tolist() == b.cluster_windows().tolist()
+    with pytest.raises(ValueError):
+        b.commit_request(preview)  # already committed
+    stale = a.preview_request(0.0, 0.0)
+    a.step(_actions(env, jax.random.PRNGKey(950), sense=False))
+    with pytest.raises(ValueError):
+        a.commit_request(stale)
+
+
+def test_forecast_is_what_happens() -> None:
+    """The forecast of a reference policy from mid-episode, with a pending request, is
+    exactly what stepping the world with that policy then produces; the world and the
+    schedule's request fate agree; the forecast changed nothing."""
+    from sarsat.reference import ReferenceController
+
+    env = _env()
+    world = LiveWorld(env, seed=SEED)
+    for i in range(3):
+        world.step(_actions(env, jax.random.PRNGKey(800 + i), sense=False))
+    latlon, _ = _feasible_point(world, None, 10)
+    request = world.inject_request(*latlon, "high", 10)
+    before, before_global = world.state, world.global_step
+
+    fc = world.forecast("greedy_beam")
+    _state_equal(world.state, before)
+    assert world.global_step == before_global
+    assert fc.start_step == 3 and fc.end_step == T
+    sched = world.schedule(fc)
+    assert sched["captures"] == len(fc.captures) == len(sched["rows"])
+    assert {r["kind"] for r in sched["rows"]} <= {"request", "event", "background"}
+    fate = sched["requests"][0]
+    assert fate["request"] == request.id and fate["outcome"] in ("collected", "missed", "open")
+
+    controller = ReferenceController(env, world.state, "greedy_beam")
+    realized = []
+    while int(world.state.step) < T:
+        res = world.step(controller(world.state))
+        realized += [(res.step, int(t), int(s)) for t, s in res.captures]
+        if res.new_episode:
+            break
+    np.testing.assert_array_equal(fc.captures, np.array(realized, int).reshape(-1, 3))
+    if fate["outcome"] == "collected":
+        assert request.status == "collected"
+        assert request.collected_global == fate["global_step"]
+        assert request.collected_by == fate["by"]
+    elif fate["outcome"] == "missed":
+        assert request.status == "missed"
+    else:
+        assert request.status == "pending"
+
+
+def test_whatif_compares_the_world_with_and_without_a_request() -> None:
+    env = _env()
+    world = LiveWorld(env, seed=SEED)
+    for i in range(2):
+        world.step(_actions(env, jax.random.PRNGKey(850 + i), sense=False))
+    latlon, _ = _feasible_point(world, None, 10)
+    preview = world.preview_request(*latlon, "high", 10)
+    before = world.state
+    base = world.forecast("greedy_beam")
+    out = world.whatif("greedy_beam", preview, base)
+    _state_equal(world.state, before)
+    assert out["request"]["id"] == preview.request.id
+    assert out["request_fate"]["request"] == preview.request.id
+    assert set(out) >= {"base", "alt", "items", "same_set", "lost", "gained", "shifted"}
+    assert out["same_set"] == (out["lost"] == 0 and out["gained"] == 0)
+    for item in out["items"]:
+        assert item["kind"] in ("request", "event", "background")
+        assert item["change"] in ("lost", "gained", "shifted", "mixed")
+    # The provisional request's own slots are not counted as "gained".
+    new_slots = set((preview.request.cluster + world.C * np.arange(world.K)).tolist())
+    assert not any(i["kind"] == "background" and i["id"] in new_slots for i in out["items"])
+    # Without the request the alternative is the base: nothing changes.
+    same = world.whatif("greedy_beam", preview, base)
+    assert same["base"]["captures"] == base.captures.shape[0]

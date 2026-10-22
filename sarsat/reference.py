@@ -13,9 +13,19 @@ observation-based policy.
 * ``coop_dedup`` -- centralised: no target is taken twice in one step.
 * ``coop_plan``  -- centralised: dedup, scarcity weighted by *every* satellite's future
                     access, and the look budget. The cooperative reference.
+
+With collection modes (``modes`` given, DECISIONS.md issue 33) a look is a target *and* a
+mode: every policy weighs each mode the battery can pay for with that mode's footprint,
+band, squint limit and quality, and takes the best value per unit of battery (value times
+the cheapest mode's cost over the mode's). The planners' look budget is counted in looks of
+the cheapest mode, their future-opportunity tables count only access some mode can serve,
+and a target's future value is scaled by the cost of the cheapest mode good enough for it.
+With one mode all of this reduces to the single-mode policies exactly.
 """
 
 from __future__ import annotations
+
+from typing import NamedTuple
 
 import jax
 import jax.numpy as jnp
@@ -37,16 +47,67 @@ def beam_values(az, el, weight, half_width, exclude=None):
     return hit @ (weight if exclude is None else np.where(exclude, 0.0, weight)), hit
 
 
+class ModeOption(NamedTuple):
+    """One collection mode as :func:`choose` weighs it at one step."""
+
+    serve: np.ndarray  # (N, M) bool: targets a look in this mode could image
+    half_width: np.ndarray  # (2,) beam half-widths [rad]
+    scale: float  # the cheapest mode's cost over this one's: value per unit of battery
+    afford: np.ndarray | None  # (N,) bool: battery pays for a look, or None for "always"
+
+
+def access_fn(env, state):
+    """``step -> (N, M)`` access some mode can serve: :meth:`SarSat._target_geometry`'s
+    visibility, narrowed to each mode's band, squint limit and quality when they matter."""
+    if not env._mode_flags:
+        return lambda step: env._target_geometry(state, step)[1]
+
+    def access(step):
+        body, visible = env._target_geometry(state, step)
+        return visible & jnp.any(mode_serve(env, state, body), axis=0)
+
+    return access
+
+
+def mode_serve(env, state, body) -> jax.Array:
+    """``(K, N, M)`` whether a look in each mode reaches and is good enough for each target
+    (the envelope's visibility is not included)."""
+    n, m = body.shape[:2]
+    serve = jnp.ones((env.num_modes, n, m), bool)
+    if env._mode_bands_differ:
+        radius = state.orbit.radius
+        serve = jnp.stack([env._in_mode_band(radius, body, k) for k in range(env.num_modes)])
+    required = env._required_quality(state)
+    if required is not None:
+        serve = serve & (env._mode_quality[:, None, None] >= required[None, None, :])
+    return serve
+
+
+def value_scale(env, state) -> np.ndarray | float:
+    """Per target, the cheapest mode's cost over that of the cheapest mode good enough for
+    it (0 if none is), or ``1.0`` without modes: what a look at it is worth per unit of
+    battery, relative to its priority."""
+    if not env._mode_flags:
+        return 1.0
+    cost = np.asarray(env._mode_cost, np.float64)
+    required = env._required_quality(state)
+    if required is None:
+        return 1.0  # the cheapest mode is good enough for every target
+    good = np.asarray(env._mode_quality)[:, None] >= np.asarray(required)[None, :]  # (K, M)
+    cheapest = np.where(good, cost[:, None], np.inf).min(axis=0)
+    return np.where(np.isfinite(cheapest), cost.min() / cheapest, 0.0)
+
+
 def precompute(env, state):
     """Future access (T, N, M); per-target opportunity counts from each step on, for the
     whole constellation (T, M) and per satellite (T, N, M); and each satellite's best
     scarcity-weighted value at every step, both flavours (T, N)."""
     steps = jnp.arange(1, env.time_limit + 1)
-    geometry = jax.jit(jax.vmap(lambda s: env._target_geometry(state, s)[1]))
+    geometry = jax.jit(jax.vmap(access_fn(env, state)))
     access = np.concatenate(
         [np.asarray(geometry(steps[i : i + 20])) for i in range(0, len(steps), 20)]
     )
-    prio = np.asarray(state.target_priority)
+    prio = np.asarray(state.target_priority) * value_scale(env, state)
     team = np.cumsum(access.sum(1)[::-1], 0)[::-1]  # (T, M)
     own = np.cumsum(access[::-1], 0)[::-1]  # (T, N, M)
     best_team = np.einsum("tnm,tm->tnm", access, prio[None] / np.maximum(team, 1.0)).max(2)
@@ -68,11 +129,11 @@ def lean_precompute(env, state, pair_budget: int = 40_000_000):
     n, m, t_max = env.num_agents, env.max_targets, env.time_limit
     steps = jnp.arange(1, t_max + 1)
     chunk = max(1, int(pair_budget // (n * m)))
-    geometry = jax.jit(jax.vmap(lambda s: env._target_geometry(state, s)[1]))
+    geometry = jax.jit(jax.vmap(access_fn(env, state)))
     access = np.concatenate(
         [np.asarray(geometry(steps[i : i + chunk])) for i in range(0, t_max, chunk)]
     )  # (T, N, M) bool
-    prio = np.asarray(state.target_priority, np.float32)
+    prio = (np.asarray(state.target_priority) * value_scale(env, state)).astype(np.float32)
     team = np.cumsum(access.sum(1, dtype=np.int32)[::-1], 0, dtype=np.int32)[::-1]  # (T, M)
     count = np.uint8 if t_max < 256 else np.uint16
     own = np.empty(access.shape, count)  # (T, N, M) opportunities left, per satellite
@@ -87,10 +148,14 @@ def lean_precompute(env, state, pair_budget: int = 40_000_000):
     return dict(access=access, team=team, own=own, best_team=best_team, best_own=best_own)
 
 
-def choose(policy, t, vis, az, el, prio, hw, battery, pre, env):
-    """Target index each satellite aims at (-1: no look) under one of the four policies."""
+def choose(policy, t, vis, az, el, prio, hw, battery, pre, env, modes=None):
+    """Target index each satellite aims at (-1: no look) under one of the four policies,
+    and the index into ``modes`` (a list of :class:`ModeOption`) of the mode it looks in.
+    Without ``modes`` there is one: the beam ``hw`` over the targets in ``vis``."""
     n_sat, remaining = vis.shape[0], env.time_limit - t
-    choice = np.full(n_sat, -1)
+    choice, mode = np.full(n_sat, -1), np.zeros(n_sat, int)
+    if modes is None:
+        modes = [ModeOption(vis, hw, 1.0, None)]
     # Sensing budget for the rest of the episode: what the current charge buys outright,
     # plus what the sustained duty cycle (recharge / cost) adds over the steps left.
     looks_left = np.minimum(
@@ -111,36 +176,56 @@ def choose(policy, t, vis, az, el, prio, hw, battery, pre, env):
         k = int(looks_left[n])
         return np.sort(best)[::-1][k - 1] if 0 < k <= len(best) else 0.0
 
-    cands = {n: np.flatnonzero(vis[n]) for n in range(n_sat) if vis[n].any()}
+    # Per satellite, the (mode, candidate targets) it could look at.
+    cands = {
+        n: [(k, np.flatnonzero(o.serve[n])) for k, o in enumerate(modes)
+            if (o.afford is None or o.afford[n]) and o.serve[n].any()]
+        for n in range(n_sat)
+    }
+    cands = {n: c for n, c in cands.items() if c}
     if policy.startswith("coop"):
         # Most valuable opportunity chooses first; beams already claimed count for nothing.
         first = {
-            n: beam_values(az[n, i], el[n, i], weight[i], hw)[0].max() for n, i in cands.items()
+            n: max(
+                beam_values(az[n, i], el[n, i], weight[i], modes[k].half_width)[0].max()
+                * modes[k].scale
+                for k, i in c
+            )
+            for n, c in cands.items()
         }
         order = sorted(cands, key=lambda n: -first[n])
     else:
         order = list(cands)
     taken = np.zeros(vis.shape[1], bool)
     for n in order:
-        idx = cands[n]
-        if policy == "solo_plan":
-            w = prio[idx] / np.maximum(pre["own"][t - 1, n, idx], 1.0)
-        else:
-            w = weight[idx]
-        value, hit = beam_values(
-            az[n, idx], el[n, idx], w, hw, exclude=taken[idx] if policy.startswith("coop") else None
-        )
-        best = value.argmax()
-        if value[best] <= 0:
+        best_value, best = 0.0, None
+        for k, idx in cands[n]:
+            if policy == "solo_plan":
+                w = prio[idx] / np.maximum(pre["own"][t - 1, n, idx], 1.0)
+            else:
+                w = weight[idx]
+            value, hit = beam_values(
+                az[n, idx],
+                el[n, idx],
+                w,
+                modes[k].half_width,
+                exclude=taken[idx] if policy.startswith("coop") else None,
+            )
+            value = value * modes[k].scale  # per unit of battery; exact for one mode
+            i = value.argmax()
+            if best is None or value[i] > best_value:
+                best_value, best = value[i], (k, idx, hit, i)
+        if best is None or best_value <= 0:
             continue
         # A near-full battery wastes recharge if it idles; otherwise skip if clearly better
         # opportunities lie ahead (future values are optimistic, hence the 0.5).
-        if planning and not (battery[n] >= 0.9 or value[best] >= 0.5 * threshold(n)):
+        if planning and not (battery[n] >= 0.9 or best_value >= 0.5 * threshold(n)):
             continue
-        choice[n] = idx[best]
+        k, idx, hit, i = best
+        choice[n], mode[n] = idx[i], k
         if policy.startswith("coop"):
-            taken[idx[hit[best]]] = True
-    return choice
+            taken[idx[hit[i]]] = True
+    return choice, mode
 
 
 class ReferenceController:
@@ -165,7 +250,21 @@ class ReferenceController:
         body, vis = self._geometry(state, jnp.int32(t))
         body, vis = np.asarray(body), np.asarray(vis)
         az, el = (np.asarray(x) for x in az_el(jnp.asarray(body)))
-        choice = choose(
+        modes = None
+        if self.env._mode_flags:
+            serve = np.asarray(mode_serve(self.env, state, jnp.asarray(body))) & vis[None]
+            battery = np.asarray(state.battery)
+            cost = np.asarray(self.env._mode_cost)
+            modes = [
+                ModeOption(
+                    serve[k],
+                    np.asarray(self.env._mode_beam[k]),
+                    float(self.env.sense_cost / cost[k]),
+                    battery >= cost[k] - 1e-6,
+                )
+                for k in range(self.env.num_modes)
+            ]
+        choice, mode = choose(
             self.policy,
             t,
             vis,
@@ -176,9 +275,11 @@ class ReferenceController:
             np.asarray(state.battery),
             self._pre,
             self.env,
+            modes,
         )
         sensing = choice >= 0
         n = self.env.num_agents
         aim_az, aim_el = az_el(jnp.asarray(body[np.arange(n), np.where(sensing, choice, 0)]))
         pointing = self.env._encode_pointing(state.orbit, aim_az[:, None], aim_el[:, None])[:, 0]
-        return jnp.concatenate([pointing, jnp.asarray(sensing, jnp.float32)[:, None]], axis=-1)
+        look = np.where(sensing, mode + 1, 0)  # the look slot: 0 none, k + 1 mode k
+        return jnp.concatenate([pointing, jnp.asarray(look, jnp.float32)[:, None]], axis=-1)

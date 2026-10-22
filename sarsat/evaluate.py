@@ -64,6 +64,25 @@ def greedy_policy(obs: Observation) -> jax.Array:
     return jnp.concatenate([slot[:, 1:], slot[:, :1]], axis=-1)
 
 
+def greedy_policy_for(env: SarSat) -> PurePolicy:
+    """:func:`greedy_policy` for ``env``'s observation layout. With collection modes it
+    points at target slot 0 and looks with the first mode (in ``env.modes`` order) whose
+    flag says it images the target, or not at all; without, it is ``greedy_policy``."""
+    if not env._mode_flags:
+        return greedy_policy
+    width = 1 + env._pointing_dim + env.num_modes
+
+    def policy(obs: Observation) -> jax.Array:
+        slot = obs.agents_view[:, :width]
+        flags = slot[:, 1 + env._pointing_dim :] > 0.5  # (N, modes)
+        look = jnp.where(jnp.any(flags, axis=1), jnp.argmax(flags, axis=1) + 1, 0)
+        return jnp.concatenate(
+            [slot[:, 1 : 1 + env._pointing_dim], look[:, None].astype(jnp.float32)], axis=-1
+        )
+
+    return policy
+
+
 def random_policy(obs: Observation) -> jax.Array:
     """Uniform random pointing, always requesting to sense (seeded by the step count)."""
     n, action_dim = obs.action_mask.shape
@@ -90,6 +109,7 @@ class EpisodeLog:
     battery: np.ndarray  # (T+1, N)
     pointing_deg: np.ndarray  # (T, N, 2) commanded (az, el), executed at step t+1
     sensing: np.ndarray  # (T, N) bool, look actually made at step t+1
+    mode: np.ndarray  # (T, N) int collection mode of each look, -1 where none was made
     boresight: np.ndarray  # (T, N, 2) ground lat/lon of the beam centre, NaN if off Earth
     footprint: np.ndarray  # (T, N, 4, 2) ground lat/lon of the beam corners
     target_latlon: np.ndarray  # (M, 2)
@@ -98,6 +118,7 @@ class EpisodeLog:
     captures: np.ndarray  # (C, 3) rows of (step, target, satellite), step in 1..T
     reward: np.ndarray  # (T,)
     target_window: np.ndarray | None = None  # (M, 2) int first/last step a target can be imaged
+    mode_names: Tuple[str, ...] | None = None  # set when the env was given ``modes``
 
     @property
     def num_steps(self) -> int:
@@ -166,10 +187,11 @@ def run_episode(
 
     @jax.jit
     def apply_and_step(state, action):
-        pointing, sensing, in_beam = env._apply_action(state, state.step + 1, action)
+        body, visible = env._target_geometry(state, state.step + 1)
+        pointing, mode, sensing, in_beam = env.resolve_look(state, action, body, visible)
         next_state, next_timestep = env.step(state, action)
         position, frame = satellite_frames(next_state.orbit, next_state.step * env.step_seconds)
-        return next_state, next_timestep, (pointing, sensing, in_beam, position, frame)
+        return next_state, next_timestep, (pointing, mode, sensing, in_beam, position, frame)
 
     def act_and_step(state, obs):
         return apply_and_step(state, act(state, obs))
@@ -177,17 +199,19 @@ def run_episode(
     position0, _ = satellite_frames(state.orbit, 0.0)
     sat_latlon = [ecef_to_latlon(np.asarray(position0))]
     battery = [np.asarray(state.battery)]
-    pointing_deg, sensing, boresight, footprint, captures, rewards = [], [], [], [], [], []
-    hw = np.asarray(env._beam_half_width) * 180 / np.pi
-    corner_offsets = np.array([[-1, -1], [1, -1], [1, 1], [-1, 1]]) * hw  # (4, 2)
+    pointing_deg, sensing, modes, boresight, footprint, captures, rewards = ([] for _ in range(7))
+    hw = np.asarray(env._beam_half_width) * 180 / np.pi  # the widest beam, for the header
+    mode_hw = np.asarray(env._mode_beam) * 180 / np.pi  # (K, 2)
+    corners = np.array([[-1, -1], [1, -1], [1, 1], [-1, 1]])  # (4, 2)
 
     for _ in range(env.time_limit):
-        state, timestep, (pointing, sense, in_beam, position, frame) = act_and_step(
+        state, timestep, (pointing, mode, sense, in_beam, position, frame) = act_and_step(
             state, timestep.observation
         )
-        pointing, sense, in_beam = (np.asarray(x) for x in (pointing, sense, in_beam))
+        pointing, mode, sense, in_beam = (np.asarray(x) for x in (pointing, mode, sense, in_beam))
         position, frame = np.asarray(position, np.float64), np.asarray(frame, np.float64)
         pointing = np.degrees(pointing)
+        corner_offsets = corners[None] * mode_hw[mode][:, None, :]  # (N, 4, 2), the mode's beam
         angles = np.concatenate([pointing[:, None, :], pointing[:, None, :] + corner_offsets], 1)
         ground = ray_ground_point(position[:, None, :], beam_directions(frame, angles))
 
@@ -195,6 +219,7 @@ def run_episode(
         battery.append(np.asarray(state.battery))
         pointing_deg.append(pointing)
         sensing.append(sense)
+        modes.append(np.where(sense, mode, -1))
         boresight.append(ground[:, 0])
         footprint.append(ground[:, 1:])
         sats, targets = np.nonzero(in_beam)
@@ -211,6 +236,7 @@ def run_episode(
         battery=np.stack(battery),
         pointing_deg=np.stack(pointing_deg),
         sensing=np.stack(sensing),
+        mode=np.stack(modes),
         boresight=np.stack(boresight),
         footprint=np.stack(footprint),
         target_latlon=np.asarray(state.target_latlon)[:num_targets],
@@ -219,6 +245,7 @@ def run_episode(
         captures=np.concatenate(captures) if captures else np.zeros((0, 3), int),
         reward=np.asarray(rewards),
         target_window=target_window,
+        mode_names=tuple(m.name for m in env.modes) if env._mode_flags else None,
     )
 
 
@@ -287,7 +314,8 @@ def write_csv(log: EpisodeLog, out_dir: Path) -> List[Path]:
             "boresight_lon_deg",
         ]
         + [f"corner{i}_{c}_deg" for i in range(1, 5) for c in ("lat", "lon")]
-        + ["targets_hit"],
+        + ["targets_hit"]
+        + (["mode"] if log.mode_names else []),
         (
             [
                 t + 1,
@@ -300,6 +328,7 @@ def write_csv(log: EpisodeLog, out_dir: Path) -> List[Path]:
             ]
             + [f(v) for v in log.footprint[t, n].ravel()]
             + [hits[t, n]]
+            + ([log.mode_names[log.mode[t, n]]] if log.mode_names else [])
             for t, n in zip(*np.nonzero(log.sensing), strict=True)
         ),
     )

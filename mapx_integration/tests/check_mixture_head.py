@@ -32,3 +32,27 @@ many = jax.vmap(lambda k: dist.sample(seed=k))(jax.random.split(key, 2000))
 print("P(sense) sampled", float(many[..., 1:, 3].mean()), "(logits near 0 -> ~0.5)")
 g = jax.grad(lambda p: head.apply(p, emb, mask, slots).log_prob(a).sum())(params)
 print("grad finite", all(bool(jnp.isfinite(x).all()) for x in jax.tree.leaves(g)))
+
+# Collection modes (DECISIONS.md issue 33): slots end with a one-hot of their mode and the
+# look slot holds the chosen slot's mode, so every sampled look must be some slot's mode.
+modes = 4
+layout_m = ActionLayout(
+    (ActionBlock(size=2), ActionBlock(size=1, num_categories=2),
+     ActionBlock(size=1, num_categories=modes + 1))
+)
+head_m = SlotMixtureHead(action_dim=4, layout=layout_m, slot_dim=8 + modes)
+slot_mode = jax.random.randint(key, (3, 5, 7, 4), 0, modes)
+slots_m = jnp.concatenate(
+    [slots.reshape(3, 5, 7, 4, 8), jax.nn.one_hot(slot_mode, modes)], axis=-1
+).reshape(3, 5, 7, 4 * (8 + modes))
+params_m = head_m.init(key, emb, mask, slots_m)
+dist_m = head_m.apply(params_m, emb, mask, slots_m)
+many_m = jax.vmap(lambda k: dist_m.sample(seed=k))(jax.random.split(key, 500))
+look = many_m[..., 3].astype(jnp.int32)
+in_slots = (look[..., None] == slot_mode[None] + 1).any(-1) | (look == 0)
+print("modes: looks in a slot's mode", bool(in_slots.all()), "values", sorted(set(look.ravel().tolist())))
+assert bool(in_slots.all()) and not bool(look[:, 0, 0, 0].any())
+lp_m = jax.vmap(dist_m.log_prob)(many_m)
+print("modes: log_prob finite", bool(jnp.isfinite(lp_m).all()), "mode", dist_m.mode().shape)
+g_m = jax.grad(lambda p: head_m.apply(p, emb, mask, slots_m).log_prob(many_m[0]).sum())(params_m)
+print("modes: grad finite", all(bool(jnp.isfinite(x).all()) for x in jax.tree.leaves(g_m)))

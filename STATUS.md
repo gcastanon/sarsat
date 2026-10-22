@@ -1,6 +1,6 @@
 # Status
 
-_Last updated: 2026-09-29 (issue 30). Read this first when picking the project up. Keep it
+_Last updated: 2026-10-21 (issue 40). Read this first when picking the project up. Keep it
 short and current: history lives in git, reasoning in DECISIONS.md, results in README.md._
 
 ## Where things live
@@ -9,7 +9,7 @@ short and current: history lives in git, reasoning in DECISIONS.md, results in R
 |---|---|---|
 | Source of truth | this git repository | pull at the start of a session, push at the end |
 | Overview and results | `README.md` | quick start, scenarios, the results table |
-| Design rationale | `DECISIONS.md` (issues 1-30) | append an issue for any non-obvious choice |
+| Design rationale | `DECISIONS.md` (issues 1-40) | append an issue for any non-obvious choice |
 | Codebase guide | `docs/index.html` | code map, data flow, experiment / training / evaluation walkthrough; update it when those change |
 | Deferred ideas | `IMPROVEMENTS.md` | move an item out when it is built |
 | Training | `mapx_integration/` | overlay files for a MAPX checkout, launch and evaluation scripts; see its README |
@@ -24,9 +24,16 @@ short and current: history lives in git, reasoning in DECISIONS.md, results in R
   degree beam, a battery duty cycle and a shared team reward. `CoopSarSat` (issue 23) adds
   the observation and compact global state the learners train on; `sarsat.windows` adds
   time-windowed event targets (issue 24); `sarsat.announce` reveals each request at a random
-  time before its window opens (issue 30).
+  time before its window opens (issue 30). `SarSat(modes=[SensorMode, ...])` gives each
+  satellite a choice of collection modes through the look slot, one per step, each with
+  its own battery cost, quality, duration (recorded, not simulated), band and beam
+  (issue 31). Without `modes` nothing changes. `sarsat.quality.QualitySarSat` gives each
+  target a required image quality and `sarsat.quality.MODES` four SAR modes (stripmap,
+  spotlight, ScanSAR, staring; issue 32).
 * **Benchmarks.** `sarsat-100sat-hotspots` (issue 22), `sarsat-200sat-events` (issue 24)
   and `sarsat-500sat-events` (issue 26, where both planning ahead and cooperating pay).
+  `sarsat-100sat-modes` (issue 32) adds modes and quality requirements to the hotspots
+  field; references (issue 33): `greedy_beam` 0.445, `solo_plan` 0.471, `coop_plan` 0.640.
   Reference policies in `sarsat.reference`; at 500 satellites they need
   `lean_precompute` (~4 GB of tables).
 * **Learners.** MAPX `rec_mappo` / `rec_ippo` with the `launch.sh` recipe (slot-mixture
@@ -46,7 +53,17 @@ short and current: history lives in git, reasoning in DECISIONS.md, results in R
   server (60x real time, 83 ms per 500-satellite step on a Windows CPU), web UI and
   offline NL parser live in the `sarsat-live` repository, which drives `LiveWorld` from a
   sarsat release and reads the parameter snapshot from this checkout's `runs/`.
-  Environment-side changes for the demo are made here.
+  Environment-side changes for the demo are made here. Requests occupy their cluster as
+  one point (`request_scatter=0`, issue 39), so a forecast of a provisional request and its
+  submission build the same field.
+* **Forecasting** (issue 40). `sarsat.forecast` plays any policy forward to the episode end
+  (exact; the policy is left as found), `LiveWorld.preview_request` / `commit_request` /
+  `schedule` / `whatif` give the demo its Schedule tab and what-if, and `sarsat.recommend`
+  searches variants of a request (deadline, priority, quality, location) confirmed by
+  forecast. 82 ms per forecast step on the CPU (13 s for 160 steps of events500). Finding:
+  a request perturbs ~0.5% of the plan's captures whatever its parameters, so "collect it
+  without losing anything" is not attainable with this policy; the reward delta is the
+  honest reading. Released as 0.4.0 for sarsat-live.
 * **Tooling.** `python -m sarsat.evaluate` writes CSV logs and a self-contained HTML map
   viewer; `examples/` holds recorded episodes. The results deck
   `reports/sarsat_marl_results.html` is built by `scripts/collect_results.py` +
@@ -80,6 +97,20 @@ short and current: history lives in git, reasoning in DECISIONS.md, results in R
 * **Battery at episode end.** The trained 500-satellite policy ends episodes at ~8%
   charge, so the continuous live world loses ~4% per episode against the offline score
   (issue 28). Training from a random initial charge should fix it.
+* **Collection modes** (issues 31-34). MAPPO with the mode-aware slot-mixture head ties
+  `coop_plan` on `sarsat-100sat-modes` for seed 42 after 1500 + 1500 + 600 low-LR updates
+  (99.8% test, 100.2% validation); seed 11 reaches 96%. On the event fields with modes
+  (issues 35, 37): 200 sats 94-98% of `coop_plan` over three seeds, 500 sats 88.7% (the
+  learner never learns staring at the 5% duty cycle). Next: staring rationing and
+  coordination at 500 sats (recharge curriculum, own-share credit, intent/claim channel).
+  The live demo (sarsat-live, uncommitted there) runs `--scenario modes200` / `modes500`.
+  Unfixed: single-mode `coop_dedup` / `coop_plan` let a satellite that cannot pay for a look
+  claim its beam (issue 33).
+* **Adversarial pair** (issue 38). `sarsat.fixed` replays one hand-built episode from
+  `scenarios/adversarial_pair.json` (2 satellites, 4 targets): greedy_beam 0.125, coop_dedup
+  0.25, solo_plan 0.375, coop_plan 0.75 = the optimum by exhaustive enumeration
+  (`scripts/adversarial_bruteforce.py`). MAPPO (`sarsat-adversarial-pair`) reaches 0.75 within
+  ~90 updates on seeds 42 and 11 and with pure team reward.
 * **Side switch vs signed action encoding.** No training evidence either way (issue 21).
 * **Realism next steps.** Look-side switching is free (a roll cost or per-pass side
   would be more honest); reward is flat across the incidence band. Both are listed in

@@ -61,7 +61,7 @@ fraction of what it sees, so which satellite spends its charge on which target m
 
 ## Benchmarks and results
 
-Four scenarios, each a Hydra config under
+Five scenarios, each a Hydra config under
 `mapx_integration/mapx/configs/env/scenario/`:
 
 | Scenario | Satellites | Targets | Duty cycle | What makes it hard |
@@ -69,6 +69,7 @@ Four scenarios, each a Hydra config under
 | `sarsat-100sat-hotspots` | 100 in 10 planes | 6000 background + 40 hotspots of 50, worth 10x each | 20% | deciding who spends battery on which hotspot |
 | `sarsat-200sat-events` | 200 in 20 planes | 6000 background + 40 events of 50, each open for 10-30 steps | 10% | still having charge when an event only you can reach opens |
 | `sarsat-500sat-events` | 500 in 50 planes | 15,000 background + 100 events of 50 | 5% | both of the above, at scale |
+| `sarsat-100sat-modes` | 100 in 10 planes | the hotspots field (30 km clusters), each target needing a minimum image quality | 20% | choosing stripmap, spotlight, ScanSAR or staring per look |
 | `sarsat-500sat-announced` | 500 in 50 planes | as above, but every target has a window (events 10-30 steps, background 30-90), announced at a random time at least 30 minutes before it opens | 5% | planning around requests that are not known in advance |
 
 Every policy is scored on the same 16 test seeds (1000-1015). The four reference policies
@@ -87,6 +88,11 @@ The trained policies are `mappo_v5`, `ev_mappo_e` and `ev500_mappo_a` (DECISIONS
 25 and 27). Each beats every non-cooperating or non-planning reference on all 16 seeds and
 reaches 97-99% of the centralised planner, while acting only on what each satellite sees.
 IPPO (no centralised critic) reaches 0.895 on the hotspot scenario.
+
+On `sarsat-100sat-modes` (DECISIONS issues 32-33) the references score `greedy_beam`
+0.445, `coop_dedup` 0.448, `solo_plan` 0.471 and `coop_plan` 0.640: with costly modes,
+saving charge for the events that need spotlight or staring is worth far more than on the
+single-mode field. No learner has been trained on it yet.
 
 No learner has been trained on `sarsat-500sat-announced` yet (DECISIONS issue 30). Its
 references score `greedy_beam` 0.372, `coop_dedup` 0.397, `solo_plan` 0.645 and `coop_plan`
@@ -152,7 +158,7 @@ sarsat release (DECISIONS issues 28 and 29).
 
 | Path | What it holds |
 |---|---|
-| `sarsat/` | the environment package: `env.py` (`SarSat`), `orbits.py`, `targets.py`, `coop.py` (`CoopSarSat`), `windows.py` (time-windowed events), `announce.py` (announced requests), `reference.py` (reference policies), `evaluate.py` (logs and viewer), `live.py` (rolling-episode world for the live demo) |
+| `sarsat/` | the environment package: `env.py` (`SarSat`), `modes.py` (collection modes), `orbits.py`, `targets.py`, `coop.py` (`CoopSarSat`), `windows.py` (time-windowed events), `announce.py` (announced requests), `reference.py` (reference policies), `evaluate.py` (logs and viewer), `live.py` (rolling-episode world for the live demo), `forecast.py` (the rest of an episode under a policy, and diffs of forecasts), `recommend.py` (variants of a request the policy collects at no cost to the rest) |
 | `tests/` | the test suite (`pytest -q`) |
 | `mapx_integration/` | training and evaluation with MAPX: launch scripts, wrappers, network, Hydra configs, Runpod run plans |
 | `scripts/` | baselines, scenario sweeps, benchmarks, report and viewer export tools |

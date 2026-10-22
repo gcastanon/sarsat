@@ -5,7 +5,10 @@ and its consequences. Anything rejected as "beyond a basic model" is cross-refer
 [IMPROVEMENTS.md](IMPROVEMENTS.md). Status is **Decided** unless noted.
 
 Issues are in the order they were decided. 1-21 define the environment; 22-28 are
-experiments (benchmarks, training runs, the live demo) and report their measurements.
+experiments (benchmarks, training runs, the live demo) and report their measurements;
+29 moves the demo out, 31-33 extend the environment (collection modes, quality
+requirements, mode-aware slots and references), 34 trains on it and 35 carries it to the
+event fields.
 
 | # | Issue | Decision in one line |
 |---|-------|----------------------|
@@ -16,7 +19,7 @@ experiments (benchmarks, training runs, the live demo) and report their measurem
 | 5 | Rectangular beam test | Box in az/el space, evaluated in tangent space |
 | 6 | Order of events in a step | Advance time, then sense at the new geometry |
 | 7 | Sensing within a 60 s step | Instantaneous snapshot at the step boundary |
-| 8 | Action encoding | `[incidence, squint, side, sense]`; hybrid 2 continuous + 2 binary |
+| 8 | Action encoding | `[incidence, squint, side, sense]`; hybrid 2 continuous + 2 binary (sense became the look slot in 31) |
 | 9 | Land / water targets | 1-degree embedded land mask, exact split, area-uniform |
 | 10 | Number of targets at reset | `reset(key, num_targets)` with static padded capacity |
 | 11 | Reward and priority | Shared team reward, priorities sum to 1 |
@@ -37,6 +40,15 @@ experiments (benchmarks, training runs, the live demo) and report their measurem
 | 26 | A 500-satellite three-way benchmark | `sarsat-500sat-events`: planning and cooperation both pay; `lean_precompute` for the references |
 | 27 | First learner at 500 satellites | One MAPPO run on a rented A40: 0.868, 98% of `coop_plan` |
 | 28 | A world that never ends | Rolling episodes (`LiveWorld`), live requests as event clusters, offline NL tasking |
+| 29 | The live demo moves to its own repository | Server, UI and NL parser in sarsat-live; it pins a sarsat release |
+| 30 | Announced requests | Every window revealed at random, at least 30 minutes ahead (`sarsat-500sat-announced`) |
+| 31 | Collection modes | One categorical look slot (no look or one mode); per-mode cost, quality, duration (unsimulated), band and beam |
+| 32 | Quality requirements and four SAR modes | `QualitySarSat`: a level per cluster and per background target; `sarsat-100sat-modes` |
+| 33 | Mode-aware slots and references | Beams over (target, mode), ranked by value per unit of battery; `coop_plan` 0.640 on `sarsat-100sat-modes` |
+| 34 | MAPPO on the modes field | 1500 + 1500 + low-LR 600 updates tie `coop_plan` on seed 42 (99.8% test, 100.2% validation); seed 11 at 96% |
+| 35 | Modes on the event fields | `WindowedQualitySarSat`: windows and quality requirements together; `sarsat-200sat-modes`, `sarsat-500sat-modes` |
+| 36 | The live world with modes | `LiveWorld` runs the quality env: per-mode footprints, `StepResult.modes`, requests with a quality |
+| 37 | MAPPO on the 200/500 modes fields | 200 sats: 94-98% of `coop_plan` over three seeds; 500 sats: 88.7%, the learner never learns staring at a 5% duty cycle |
 
 ---
 
@@ -1162,3 +1174,508 @@ recipe with 16 environments on one A40 at $0.49/hr, expected ~3.6 h and ~$1.76, 
 `greedy_beam` and `coop_dedup` as the fair references and `coop_plan` as a ceiling that
 knows the future. Follow-ups: an asymmetric critic that sees unannounced requests, and
 `horizon=30` so the actor's look-ahead spans the whole notice.
+
+## Issue 31 - Collection modes: one per look, each with its own cost, quality and reach
+
+**Question.** A real sensor has several collection modes (spotlight, strip-map, and so
+on) that trade footprint, reach and energy against image quality. How should a satellite
+choose between modes, given that it collects in only one at a time?
+
+**Options.** (a) A mode slot next to the binary sense flag: `[incidence, squint, side,
+sense, mode]`. Most of its combinations are meaningless (a mode with no look), and it
+needs a second categorical block. (b) Turn the sense flag into one categorical **look**
+slot: `0` means no look, `k` means a look in mode `k - 1`. (c) Fix a mode per satellite.
+
+**Decision.** (b). The action stays `[incidence, squint, side, look]`. A satellite names
+at most one mode per step by construction, and with a single mode the look slot *is* the
+old sense flag `{0, 1}`. `action_dim` is unchanged, every `action[:, pointing_dim] > 0.5`
+still means "looks this step", and trained checkpoints and sarsat-live's `(N, 4)` actions
+carry over. `sarsat.modes.SensorMode` holds a mode's parameters:
+
+| field | effect |
+|---|---|
+| `sense_cost` | battery fraction one look consumes |
+| `quality` | image quality delivered; a look only images a target whose required quality it meets |
+| `duration_s` | how long a look takes; **recorded, not simulated** (every look is issue 7's snapshot) |
+| `incidence_deg`, `max_squint_deg` | the mode's access region (issue 17's band and squint limit) |
+| `beam_half_width_deg` | the mode's beam footprint (issue 5's box) |
+
+`SarSat(modes=[...])` takes `SensorMode`s or mappings of their fields (Hydra configs).
+Without `modes` the env holds the one mode its scalar arguments describe, and is
+bit-identical to before: plain and windowed-coop trajectories (state, reward,
+observation, mask) were compared against the previous commit.
+
+*Pointing.* The pointing slots sweep the **envelope** of all modes' bands and squint
+limits, so a given pointing aims at the same ground point whichever mode is chosen, and
+the observation's pointing features stay mode-independent. The envelope also drives the
+expensive N x M visibility pass. The chosen mode's own band and squint limit are then a
+cheap extra comparison on the same lines of sight, skipped when every mode spans the
+envelope. The envelope's outer edge plus the widest beam must stay below 90 degrees.
+
+*Battery.* A look in mode `k` costs `sense_cost[k]`. The action mask still closes the
+look slot only when the battery cannot pay for the **cheapest** mode, because MAPX masks
+whole slots, not categories. A look in a mode the battery cannot afford is ignored, as an
+unaffordable sense request always was. Every mode's cost must be at least
+`recharge_rate`.
+
+*Quality.* `SarSat._required_quality(state)` returns the `(M,)` quality each target
+requires, or `None` (the default) for no requirement. Target requirements are deliberately
+not defined yet; when they are, a subclass whose state carries them overrides this hook,
+and both the dynamics and the observation flags respect it.
+
+*Observation.* Only when `modes` is given, each plain-observation target slot gains one
+flag per mode: whether a look in that mode, aimed at the slot's target, images it (band,
+squint limit and quality; a beam centred on the target contains it whatever the
+footprint). The slot then reads `(accessible, *pointing, *mode_flags)`, and copying the
+pointing with any flagged mode images the target (tested).
+
+*One code path.* The transition used to be copied in six places (`SarSat._apply_action`,
+`CoopSarSat.transition_with_credit`, `LiveWorld._advance`, two in `diagnose_policy.py`).
+They all go through `SarSat.resolve_look` and `SarSat.next_battery` now.
+
+**Consequences.** On a Windows CPU at 100 satellites x 5,000 targets a step costs ~5 ms
+with or without modes (one to three modes measured). `run_episode` draws each look's
+footprint with its own mode's beam and records `EpisodeLog.mode`; `looks.csv` gains a
+`mode` column only when modes are configured, so the shipped example CSVs are unchanged.
+`greedy_policy_for(env)` is the observation greedy rule for any layout: aim at slot 0 and
+look with the first flagged mode in `env.modes` order. The plain MAPX wrapper declares the
+look slot as a `num_modes + 1`-way categorical block, the same binary block as before for
+one mode. It was not run against MAPX, which is private and not reachable from this
+session; check how `HybridActionHead` applies a closed mask to a multi-category block
+before training. Not yet mode-aware, and refusing more than one mode with
+`NotImplementedError` rather than silently using the envelope: `CoopSarSat`'s observation
+(its beam slots are found with a single footprint and band) and the reference policies
+(choosing a mode is only meaningful once targets carry quality requirements). Those are
+the next steps.
+
+## Issue 32 - Quality requirements and four SAR modes (`sarsat-100sat-modes`)
+
+**Question.** Issue 31 gave satellites modes but no reason to prefer a better one: without
+target requirements the cheapest mode that reaches a target always wins. What should
+targets require, and which modes should a scenario offer?
+
+**Decision.** `sarsat.quality.QualitySarSat` carries `target_quality` `(M,)` in its state
+and returns it from issue 31's `_required_quality` hook, so the dynamics and the plain
+observation's per-mode flags respect it unchanged. Each hotspot cluster draws one level
+that all its targets share (an event needs one kind of image); each background target draws
+its own. Levels come from a key folded off the reset key, so orbits and targets are those
+of `SarSat`, and the default single level `0.0` reproduces it (tested to the observation).
+`sarsat.quality.MODES` holds four modes, cheapest first, from rough public figures for
+TerraSAR-X, Sentinel-1, ICEYE, Capella and Umbra. `quality` is radar-NIIRS-like (halving
+the resolution cell adds about one level); beams are physical at ~550 km and ~35 degrees
+incidence (0.036 deg per km of swath width, 0.043 deg per km of scene length):
+
+| mode | cost | quality | duration | incidence | squint | beam half-widths | real figures |
+|---|---|---|---|---|---|---|---|
+| stripmap | 0.10 | 3.5 | 10 s | 20-45 | 20 | 1.0 x 2.0 | 3-5 m, 28 x 46 km |
+| spotlight | 0.13 | 5.0 | 10 s | 15-55 | 25 | 0.2 x 0.2 | 0.5-1 m, 5 km patch, plus a slew |
+| scansar | 0.20 | 1.5 | 25 s | 20-45 | 20 | 3.6 x 4.0 | 15-40 m, 100 km swath |
+| staring | 0.30 | 7.0 | 45 s | 20-50 | 15 | 0.15 x 0.15 | 0.15-0.25 m, 4 km patch |
+
+`sarsat-100sat-modes` is the issue-22 hotspots field with these modes, cluster levels
+uniform over `[1, 3, 5, 7]` (one per mode's grade) and background levels `[1, 3, 5]` at
+`[0.4, 0.4, 0.2]`, so stripmap, the cheapest mode, meets 80% of the background.
+
+**Two calibrations, measured before they were adopted** (targets caught per look when a
+satellite aims a mode at a hotspot target it can serve, hotspots field, seed 3):
+
+* *Strip-mode squint.* Stripmap and ScanSAR look broadside (physically +-10 and +-5
+  degrees). Under issue 7's snapshot that geometry has to line up with a step boundary,
+  and ScanSAR could reach 9 of the 231 hotspot sightings spotlight reached. A strip mode
+  really collects while the ground slides ~420 km past in a 60 s step, about +-20 degrees
+  of squint at these ranges, so both get +-20.
+* *Cluster radius.* Background targets are sparse (about one per 30,000 km^2), so a wide
+  beam rarely catches more than its aim point. At the field's 100 km cluster radius
+  ScanSAR caught 2.9 targets per look against stripmap's 1.3 (14.6 against 12.9 per unit
+  of battery): never worth it. At 30 km, ScanSAR catches ~23 (115 per unit of battery),
+  stripmap ~5-6 (51-58), spotlight and staring ~1 (9 and 3.3). Each mode then has events
+  where it is the right choice, so the scenario uses `hotspot_radius_km: 30`.
+
+**Consequences.** `greedy_policy_for` (aim at slot 0, cheapest mode that images it) scores
+0.179 +- 0.004 (standard error) on seeds 1000-1015, looking 73% spotlight, 27% stripmap,
+never ScanSAR and almost never staring: spotlight's wider band and squint reach slot 0
+where stripmap's do not, and greedy aims at single targets, so it never trades up to a wide
+swath on a cluster. That is the headroom a learner should find. The plain MAPX factory
+builds `QualitySarSat` when the scenario sets any `*_quality` key; train with `env=sarsat`,
+because `CoopSarSat` (the `launch.sh` default) still refuses several modes, as do the
+reference policies (both mode-aware since issue 33). The observation shows the per-mode flags (what each mode would image)
+but not the level itself or the target's priority.
+
+## Issue 33 - Mode-aware beam slots and reference policies
+
+**Question.** `CoopSarSat`'s beam slots and the four reference policies of issue 22 were
+found with one footprint and one band, so both refused several modes (issue 31). With
+quality requirements in place (issue 32), how should they choose a mode?
+
+**Decision.** A beam is a target to aim at *and* a mode to look in.
+
+* *Slots.* The non-maximum suppression runs over every (candidate, mode) pair: a beam in
+  mode `k` centred on a candidate images the candidates in `k`'s footprint, band, squint
+  limit and quality (what `resolve_look` would image), and a mode the battery cannot pay for
+  offers no beam, so every slot is a look that can be made now. Beams are ranked by value
+  per unit of battery, the gain times the cheapest mode's cost over the beam's; with one
+  mode that is the plain ranking. The reported `value` and `scarce_value` stay raw. Each
+  slot gains a one-hot of its mode (`slot_dim` = 8 + modes, 9 + modes windowed), so a
+  slot's pointing followed by its mode is the look that captures its value (tested exactly
+  for slot 0, where the candidate set holds every target). `slot_dim` is now an instance
+  attribute, set before `SarSat.__init__` sizes the specs; the class attribute is the
+  single-mode width. Without `modes` the layout and values are unchanged.
+* *References.* `choose()` weighs, for each satellite, every mode the battery can pay for
+  (`ModeOption`: the targets it serves, its beam, its value scale) and takes the best value
+  per unit of battery; the coop policies order satellites and claim beams by the same
+  measure. The planners' look budget stays in looks of the cheapest mode, their future
+  tables count only access some mode can serve (`access_fn`), and each target's future
+  value is scaled by the cost of the cheapest mode good enough for it (`value_scale`), so a
+  staring-only target counts a third of its priority against the budget. With one mode
+  every policy is unchanged: actions were compared step by step against the previous
+  `reference.py` on a plain and a windowed field, all four policies, full and lean tables,
+  and were identical.
+* *Plumbing.* `QualityCoopSarSat` is `CoopSarSat` over `QualitySarSat`. The coop MAPX
+  factory builds it when the scenario sets `*_quality` keys, declares the look as a
+  `num_modes + 1`-way block, and reads `slot_dim` off the built env. `baseline_seeds.py`
+  gains `--scenario modes100`, the greedy observation policy and random looks for any
+  number of modes, counts only looks the battery paid for, and logs `mode_looks`.
+  `SlotMixtureHead` (the `launch.sh` default) has a binary sense flag, so it now refuses a
+  multi-category look; `SARSAT_HEAD=anchored` handles any number of categories. Neither
+  has been run against MAPX (private, not reachable from this session).
+
+Noted, not changed: with one mode, `coop_dedup` and `coop_plan` let a satellite that cannot
+pay for a look still claim its beam, which then goes to nobody that step. The mode-aware
+path checks the battery first; the single-mode path was left alone so recorded baselines
+reproduce.
+
+**Consequences.** All six policies on `sarsat-100sat-modes`, seeds 1000-1015
+(`runs/baselines/modes100.jsonl`; standard errors over seeds; looks per episode by mode):
+
+| policy | return | of `coop_plan` | stripmap | spotlight | scansar | staring |
+|---|---|---|---|---|---|---|
+| `random` | 0.002 +- 0.000 | 0% | 2234 | 1134 | 214 | 123 |
+| `greedy` (observation, slot 0) | 0.179 +- 0.004 | 28% | 922 | 2465 | 0 | 4 |
+| `greedy_beam` | 0.445 +- 0.013 | 69% | 2588 | 1160 | 10 | 27 |
+| `coop_dedup` | 0.448 +- 0.013 | 70% | 2576 | 1161 | 10 | 28 |
+| `solo_plan` | 0.471 +- 0.014 | 73% | 2577 | 1158 | 11 | 29 |
+| `coop_plan` | 0.640 +- 0.012 | 100% | 1369 | 1779 | 19 | 150 |
+
+Paired over seeds: `coop_plan` beats `solo_plan` by 0.168 +- 0.006 and `solo_plan` beats
+`greedy_beam` by 0.026 +- 0.003, both on 16 of 16 seeds; `coop_dedup` matches `greedy_beam`
+(+0.003 +- 0.002). Planning and cooperation together are worth 44% over the greedy rule
+here, against 15% on the single-mode hotspots field (0.786 to 0.904): with costly modes
+the decision is not only where to look but what to save charge for. The references that
+look whenever they can spend it on stripmap background as it comes into view; `coop_plan`
+waits, and spends half its looks on spotlight and five times as many on staring, the only
+mode good enough for the staring-grade events, each target worth ten background targets.
+ScanSAR is rare for every policy (10-19 looks an episode) but each look takes a large
+share of a wide-area cluster. The plain-observation `greedy` lags far behind because its
+slot 0 is the target nearest nadir, not the most valuable beam; the coop observation's
+slot 0 (what `greedy_beam` aims at) scored 0.470 on seed 1000. No learner has been
+trained on this scenario yet (issue 34 does).
+
+## Issue 34 - MAPPO on `sarsat-100sat-modes`: a three-stage recipe ties `coop_plan`
+
+**Question.** Can the issue-23 recipe learn when to save charge for spotlight and staring
+looks, where planning and cooperation are worth 44% over the greedy rule (issue 33)?
+
+**Head.** `SlotMixtureHead` now looks in the chosen slot's mode: picking a slot picks its
+(target, mode) pair, the look stays a Bernoulli, and `log_prob` sums only over the slots whose
+mode matches the look. With one mode it is the old head exactly.
+
+**Runs** (launch.sh recipe: credit_mix 0.5, ranked contention, 32 envs, LR decay; one local
+RTX 5070 Ti and one Runpod A40 shared by three runs). Paired seeds, test 1000-1015 /
+validation 2000-2015 (`coop_plan` 0.6396 / 0.6673, `solo_plan` 0.4711 / 0.5033):
+
+| run | stages | test | of `coop_plan` | validation |
+|---|---|---|---|---|
+| seed 42 | 1500 updates | 0.601 | 94% | |
+| seed 42 | + 1500 resumed at full LR | 0.635 | 99.3% | |
+| seed 42 | + 600 more at full LR | 0.634 | 99.1% | 0.664 |
+| seed 42 | + 600 at actor 5e-5 / critic 1e-4 | **0.6385** (diff -0.0011 +- 0.0013, 7/16 wins) | **99.8%** | **0.6687** (+0.0014 +- 0.0013, 10/16) |
+| seed 11 | 1500 + 1500 + low-LR 600 | 0.614 | 96.0% | 0.645 |
+| 8 slots, 32-step look-ahead | 1500 + 1500 | 0.607 | 94.9% | 0.637 |
+| credit_mix 0 (pure team reward) | 1500 | 0.347 | 54% | |
+
+Every policy with credit mixing beats every independent reference on all 32 seeds. Seed 42
+ties `coop_plan` on both seed sets; seed 11 trails by ~4%, so the seed spread (0.025) is larger
+than seed 42's remaining gap. A full-LR restart helped once (+0.034) and then not at all; a
+low-LR fine-tune from the best checkpoint closed the last ~0.005 on seed 42 and gained 0.011 on
+seed 11. The wider observation did not help. Pure team reward fails outright here, below
+`greedy_beam` (0.445): unlike the single-mode fields, credit assignment is not optional.
+
+**Diagnosis** (`diagnose_policy.py`, now mode-aware; seed 1000, the 3000-update seed-42
+policy against `coop_plan`): staring looks 191 vs 198 (the greedy references make 36), so the
+learner rations charge for the staring-grade events as the planner does; but it makes 550
+spotlight looks against 1770 and 2784 stripmap against 1247, and wastes 25.9 priority units on
+same-step duplicates (coop_plan 0). The remaining gap is coordination, the same limit as on
+the earlier benchmarks; an intent or claim channel is the next lever.
+
+**Cost.** One A40 Secure at $0.49/h, ~$2.5 for the pod runs; the local runs were free. A JAX
+pitfall cost the first pod launch: `/etc/rp_environment` sets `LD_LIBRARY_PATH` to the image's
+CUDA, which hides the venv's CUDA wheels, and JAX silently trains on the CPU; launch scripts now
+unset it. `mapx_integration/params_snapshot.py` writes a run's actor params (~1 MB) for keeping.
+A third seed (23) is running through the same three stages.
+
+## Issue 35 - Collection modes on the 200- and 500-satellite event fields
+
+**Question.** Issues 32-34 added modes and quality requirements on the persistent hotspot
+field. The 200- and 500-satellite benchmarks are about time-windowed events (issues 24, 26):
+how do the two combine?
+
+**Decision.** `sarsat.quality.WindowedQualitySarSat` is `QualitySarSat` over
+`WindowedSarSat`, and `WindowedQualityCoopSarSat` is `WindowedCoopSarSat` over it: the state
+carries both `target_window` and `target_quality`; a look images a target only inside its
+window and only in a mode good enough for it; the coop slots keep the window-left feature and
+add the mode one-hot (`slot_dim` 9 + modes). `QualitySarSat` builds its state through
+`_quality_state_cls`, so each combination declares its own state type. With the default
+quality level the windowed env is reproduced exactly (tested to the observation).
+`sarsat-200sat-modes` and `sarsat-500sat-modes` are the event fields unchanged (windows,
+duty cycles, persistent background) with `sarsat-100sat-modes`'s four modes and quality
+levels, and 30 km clusters so a ScanSAR swath can hold one. The coop MAPX factory, the
+baseline script (`modes200`, `modes500`), `eval_checkpoint.py` and `diagnose_policy.py`
+build the new classes when a scenario has both windows and quality keys; announcements with
+quality are refused.
+
+**Consequences.** Locally (WSL, ~4 GB allocation cap) the 200-satellite modes field fits 12
+environments, not 16: training runs at ~1,400 env-steps/s, ~45 min per 1500 updates.
+
+## Issue 36 - The live world with collection modes
+
+**Question.** `LiveWorld` (issue 28) re-packed each episode into an explicit `WindowedState`
+and drew every footprint with the one beam. What does it need to run a policy trained on
+`sarsat-500sat-modes`?
+
+**Decision.** The next episode's base is the environment's own fresh state with the orbit,
+step and battery replaced (`fresh._replace(...)`), so whatever state type the environment
+uses rides along; for `WindowedCoopSarSat` the values are those of before. Each look's
+footprint uses its own mode's beam half-widths, and `StepResult.modes` maps each sensing
+satellite to its mode (a new trailing field with a default, so callers that ignore it are
+unchanged). `inject_request(..., quality=...)` sets the image quality the request needs on
+all of its cluster's slots (refused without a quality environment; `None` asks for any look)
+and the request keeps it across the episode boundary, as background targets that survive the
+boundary keep theirs. Tested on a scaled-down `sarsat-500sat-modes` world (rollover, per-mode
+footprints, request quality); the existing live tests pass unchanged. The server, UI and NL
+parser that use this live in sarsat-live.
+
+## Issue 37 - MAPPO on the 200- and 500-satellite modes fields
+
+**Question.** Does the issue-34 recipe (mode-aware slot-mixture head, credit_mix 0.5, then a
+full-LR resume and a low-LR fine-tune) carry to the event fields with modes (issue 35)?
+
+**References** (paired seeds; test 1000-1015, validation 2000-2015 for 200 sats; test only
+for 500 sats, where one planner episode takes ~8 min on a CPU):
+
+| field | greedy_beam | coop_dedup | solo_plan | coop_plan |
+|---|---|---|---|---|
+| 200 sats, test / validation | 0.267 / 0.276 | 0.280 / 0.288 | 0.281 / 0.292 | 0.455 / 0.472 |
+| 500 sats, test | 0.195 | 0.211 | 0.309 | 0.582 |
+
+**200 satellites** (local RTX 5070 Ti, 12 envs, the WSL allocation cap; ~45 min per 1500
+updates). Three seeds through stage 1 (1500 updates, plateau rule), a full-LR resume
+(plateau rule) and a low-LR fine-tune (600 updates): seed 42 0.447 / 0.463 (98.1% / 98.2% of
+coop_plan; paired diff -0.0085 +- 0.0023, 3/16 wins on test), seed 11 0.441 / 0.459
+(96.8% / 97.3%), seed 23 0.428 / 0.445 (94.0% / 94.4%). Every seed beats every independent
+reference on all 32 seeds. A second, lower-LR leg on seed 42 (2e-5) added nothing. Pure
+team reward (credit_mix 0) scores 0.201 / 0.215, below greedy_beam, as at 100 satellites.
+
+**500 satellites** (one A40, 12 envs, 250 env-steps/s, 25 GB; 8.7 s per update). Stage 1
+plateau-stopped at update 1110 (best at 810): 0.509 (87.5%), 0/16 wins, 16/16 over
+solo_plan. A low-LR fine-tune from it: 0.509, no gain. A full-LR resume (plateau-stopped at
+1110, best at 810): **0.516 (88.7%)**, +0.007 +- 0.001 over stage 1 on 16/16 seeds. MAPX's own
+12-episode evaluation read 0.548-0.557 at the best checkpoints: the maximum of noisy
+evaluations is biased upward, and only the paired seeds are trusted.
+
+**Diagnosis** (`diagnose_policy.py`, seeds 1000 and 1004, stage-1 best vs coop_plan): the
+learner makes 2 staring looks per episode against coop_plan's 249, 815 spotlight against
+2504 and 7525 stripmap against 4224; it reaches open events with 0.45 charge against 0.73,
+images 53% of event priority against 65%, and wastes 273 priority units on same-step
+duplicates against 24. At the 5% duty cycle one staring look costs 60 steps of charge; the
+policy spends charge on background stripmap looks as it comes into view and never learned to
+save it for the staring-grade quarter of the events (at 100 satellites, 20% duty cycle, it
+matched coop_plan's staring count, issue 34). The 500-satellite gap is therefore rationing
+and coordination, not training length: a curriculum on the recharge rate, more own-share
+credit against the duplicates, or an intent/claim channel are the candidate next steps.
+
+**Cost.** The 500-satellite pod ran 7.1 h ($3.49) including the references on its CPU. A
+third 100-satellite seed (issue 34) was lost when its pod hit its hard cap while the
+session waited on a question; the chain had not been pulled.
+
+## Issue 38 - A fixed adversarial episode: two satellites, four targets
+
+**Question.** What is the smallest scenario on which the four reference policies of issue 22
+separate, and can a learner match `coop_plan` on it?
+
+**Decision.** `sarsat.fixed.FixedSarSat` / `FixedCoopSarSat` start every episode, whatever
+the reset key, from a scenario file: circular orbital elements and initial charge per
+satellite, position and priority per target. The file's `environment` block must agree with
+`sense_cost`, `recharge_rate`, `time_limit` and `step_seconds`, which default to it; with
+`hotspots` set, the file's first targets are the hotspot (event) targets the coop look-ahead
+tracks. The coop MAPX factory builds `FixedCoopSarSat` when the scenario has a
+`scenario_file` key. `scripts/adversarial_scenario.py` writes
+`scenarios/adversarial_pair.json`: two satellites 3 s apart in one plane (the same view),
+sense cost 0.5, initial charge 0.55, recharge 0.001 (one look each in the 10-step episode),
+two events T1, T2 (priority 3) visible only at step 6 and two low-priority targets J1, J2
+(priority 1) visible at steps 2-3, each target in a beam of its own. It attacks each
+policy's blind spot: greedy_beam looks at once and both satellites take J1; coop_dedup
+splits J1/J2; solo_plan waits but both take T1; coop_plan waits and splits T1/T2.
+
+| policy | return |
+|---|---|
+| `greedy_beam` | 0.125 |
+| `coop_dedup` | 0.25 |
+| `solo_plan` | 0.375 |
+| `coop_plan` | 0.75 |
+
+With low priority j and event priority t the four returns are j, 2j, t and 2t; the planners
+skip the low targets when j < t/2. One satellite cannot separate them (dedup is then greedy
+and coop_plan is solo_plan). The initial charge is below 0.9 because the planners always look
+when their charge is at least 0.9. The same returns hold on orbit draws 0-3 of the generator.
+
+**Optimum.** `scripts/adversarial_bruteforce.py` executes all 361 joint plans (up to two
+looks per satellite, beams centred on targets) through `SarSat.step`; no beam can hold two
+targets, so these cover every imaged set. The best is 0.75, reached only by T1 and T2 at
+step 6 in either order; no plan asking for a second look beats 0.5 (the battery refuses it).
+`coop_plan` is optimal here, so a learner can tie it but not beat it.
+
+**Consequences.** Training scenario `sarsat-adversarial-pair` (coop env only). The two
+satellites share parameters and see near-identical observations; `ranked_contention` is
+what tells them apart. A CPU smoke test reached 0.375 (solo_plan's split failure) after 20
+updates.
+
+**MAPPO** (one A40, the three runs sharing it, `launch.sh` recipe: slot-mixture head, ranked
+contention, 32 envs, 1500 updates, ~880 s each; $0.30 for the pod). Every run reaches the
+optimum: credit_mix 0.5 on seeds 42 and 11 from the third greedy evaluation (update ~90; the
+first two read 0.375, solo_plan's both-take-T1 failure), pure team reward (credit_mix 0)
+from the first, and all three hold 0.75 through evaluation 50 and on `eval_checkpoint.py`
+(seeds 0-7, all the same episode). With two agents the team reward is not diluted, which is
+why credit mixing, indispensable on the 100-satellite modes field (issue 34), is not needed
+here; ranked contention is enough to break the satellites' symmetry. Runs in
+`runs/adv_mappo_{s42,s11,team}` (git-ignored).
+
+## Issue 39 - Requests as one point: no scatter
+
+**Question.** A live request becomes the 50 slots of an event cluster so the look-ahead
+values it like a training event (issue 28), the first slot exactly at the point and the other
+49 scattered by 12-20 km from a numpy draw. The forecast view planned for the demo (a
+provisional request is forecast, then submitted or dropped) needs the submitted field to be
+the field that was forecast. With a random scatter it is not: the second draw differs, every
+agent's observation differs, and the forecast can disagree with what happens. Can the scatter
+go without the policy noticing?
+
+**Decision.** `LiveWorld(request_scatter=0.0)` is the default: every slot sits on the point,
+no draw is made, and the field is a pure function of (lat, lon, priority, quality). The
+look-ahead still reads a full cluster (`remaining` = 1), one look collects the request (the
+operational meaning of a request), and the cluster slot is still the one `_choose_cluster`
+picks. `request_scatter=1.0` restores the former spread (`PRIORITY_SIGMA_KM` scaled). A
+request literally one active slot was not an option without retraining: the look-ahead would
+read `active/50` = 0.02 and no satellite would steer toward it (issue 28's note).
+
+**Measurement.** Paired on the Windows CPU (`sarsat_live.policy` scenarios, their default
+snapshots), the same seeds, request points and steps for both scatters, 10 normal requests per
+episode with a 30-step deadline, 4 episodes per seed:
+
+| scenario | scatter | requests collected | steps to collection (median) | episode returns | imaged event fraction |
+|---|---|---|---|---|---|
+| events500, seed 1000 | 1.0 | 40/40 | 3 | 0.930, 0.822, 0.814, 0.786 | 0.886, 0.844, 0.846, 0.812 |
+| events500, seed 1000 | 0.0 | 40/40 | 3 | 0.930, 0.827, 0.812, 0.791 | 0.887, 0.849, 0.844, 0.817 |
+| events500, seed 1001 | 1.0 | 37/37 | 3 | 0.941, 0.807, 0.779, 0.775 | 0.915, 0.825, 0.805, 0.794 |
+| events500, seed 1001 | 0.0 | 37/37 | 3 | 0.941, 0.808, 0.780, 0.775 | 0.915, 0.825, 0.806, 0.791 |
+| modes500, seed 1000 | 1.0 | 40/40 | 3 | 0.632, 0.482, 0.536, 0.518 | 0.604, 0.499, 0.579, 0.556 |
+| modes500, seed 1000 | 0.0 | 40/40 | 2 | 0.633, 0.484, 0.541, 0.516 | 0.603, 0.500, 0.584, 0.552 |
+| modes500, seed 1001 | 1.0 | 37/38 | 2 | 0.585, 0.526, 0.475, 0.468 | 0.558, 0.553, 0.505, 0.490 |
+| modes500, seed 1001 | 0.0 | 38/38 | 2 | 0.586, 0.528, 0.479, 0.484 | 0.558, 0.555, 0.509, 0.509 |
+
+Requests are collected on the same pass either way (the median wait is the first access or
+the pass after it); the one request the spread missed (modes500, seed 1001) the point
+collects. Returns and imaged fractions move by at most 0.005 on events500 and 0.016 on
+modes500 (one episode; the rest within 0.005), with no direction, which is the run-to-run
+noise of a changed field. The step time is unchanged (16-18 s per 180-step episode, 500
+satellites, CPU).
+
+**Consequences.** The sarsat-live server and soak need no change (the default applies); the
+former behaviour is one constructor argument away. `tests/test_live.py` pins the field to
+the point and the determinism across worlds. The RNG stream of `LiveWorld` is no longer
+advanced by requests, so episode draws after a request are the same as without it.
+
+## Issue 40 - Forecasting the rest of the episode, what-if on a provisional request, and alternatives
+
+**Question.** The demo shows the policy acting; an operator also wants to see what it is
+*going* to do: what will be collected by the end of the episode if nothing changes, what a
+request they are about to submit would change, and how to change that request so it fits
+without displacing anything. Where does that live, and how exact can it be?
+
+**Decision.** Three layers, the first two here, the view in sarsat-live.
+
+* `sarsat.forecast.forecast(env, state, obs, policy, horizon)` plays the policy forward from
+  the current state to the episode end (or ``horizon`` steps) and records every capture
+  (step, slot, satellite, mode), look, reward and battery. Inside an episode the transition
+  is deterministic and the greedy policy is a function of its observation and carried state,
+  so the forecast is exact (`tests/test_forecast.py` pins it to `run_episode`; `tests/
+  test_live.py` and sarsat-live's `tests/test_policy.py` pin it to what the live world then
+  does). The policy is left as found: a policy that owns state exposes `snapshot()` /
+  `restore()` (sarsat-live's `TrainedPolicy` returns its GRU carry; JAX arrays are
+  immutable), a plain function has nothing to preserve, a reference policy named by its
+  string is rebuilt from the current state. A stateful policy without `snapshot` is refused.
+  `diff(base, alt)` compares two forecasts slot by slot: lost, gained, shifted (another step,
+  satellite or mode), same.
+* `LiveWorld.preview_request(...)` builds a request and the world state it would produce
+  without touching the world (a `Preview`; the request's status is ``provisional``);
+  `commit_request(preview)` puts exactly that state in (refused if the world has moved since,
+  so the field committed is the field forecast; this is why requests have no scatter, issue
+  39). `inject_request` is the two in a row. `forecast(policy, preview=None)` forecasts the
+  world or the previewed one; `schedule(fc)` reads a forecast as a table (every capture with
+  its kind, request or event, position, weight, satellite, mode; each pending request's fate
+  by the rule of `_update_requests`: collected at a step by a satellite, missed, or open past
+  the episode; each event cluster's imaged fraction before and within the forecast and by
+  whom); `whatif(policy, preview, base)` is the schedule with the request against the one
+  without, with every request, event and background target whose fate differs listed as
+  lost, gained or shifted. "No impact" means the *set* of collected targets is unchanged
+  (``same_set``); a shift in step or satellite is flagged, not counted (user, 2026-10-21).
+* `sarsat.recommend.Recommender(world, policy, allow, ...)` finds variants of a provisional
+  request the policy collects with the set of other collected targets unchanged. Generate:
+  one or two of deadline (later, in 5-step increments to the 30-step cap or the episode
+  end), priority (the other two), quality (each lower mode's, then any) and location (8
+  bearings at 25 and 50 km); a variant is a candidate if some satellite can reach its point
+  (the cheapest mode's geometry, as `feasibility`) at a step inside its window at which the
+  base forecast has that satellite idle and charged; a priority-only change is kept without
+  that test, since it changes what the policy wants, not what it can reach. Rank by number
+  of changes, then earliest idle pass, then more passes. Confirm: each candidate in order is
+  previewed and forecast (`whatif`), up to ``max_forecasts`` (6); it is an alternative if
+  collected with ``lost == 0`` (``max_lost`` relaxes that for a user who will trade). The
+  rejected ones are returned least damaging first. Splitting a request is not generated.
+* The world is paused while a what-if is open (the server's loop stops stepping; a forecast
+  is one policy step per forecast step and would otherwise fall behind its clock). The
+  forecast of the world as it is is cached per global step, recomputed on commit, and sent
+  to every client (``forecast`` message); the page's Schedule tab shows it (captures per
+  step by kind, a satellite x step strip, request fates, events with imaged fractions and
+  satellites, every capture; sortable, filtered by satellite, latitude, longitude and kind)
+  and the map marks every target the forecast images (hover: when and by whom). "What if"
+  on the request box runs the what-if; "Find alternatives" the recommender; "Submit this
+  request" commits the previewed field. sarsat-live DECISIONS issue 5.
+
+**Measured** (Windows CPU, one policy call plus one jitted step per forecast step).
+events500 from step 20: 160 steps in 13.1 s (82 ms/step), 11,554 captures; a what-if 13.8 s
+(one more forecast); the recommender 40 s for 3 forecasts. modes500 in the demo: 157 steps
+14.3 s, 131 steps 11.5 s, the schedule message about 1 MB.
+
+**Findings.** A request perturbs the whole plan, not only its neighbourhood. events500, a
+normal request with a 10-step deadline at a random land point: collected, and against the
+plan without it 21 captures lost, 21 gained, 44 shifted of 11,554. modes500 at step 49,
+"image Nairobi, high priority, within 25 minutes": collected at step 53 by satellite 442
+(spotlight); 30 lost, 23 gained, 97 shifted of 6,673, reward +0.0076; when submitted, the
+live world collected it at step 53 by satellite 442, as forecast. The recommender at
+``max_lost = 0`` found nothing: of 69 candidates, the 6 forecast (deadline +5, location
+moved 25-50 km) all gave the *identical* outcome -- the same collection step and satellite
+and the same 30/23/97 -- so the perturbation comes from the request's existence (50 new
+slots the look-ahead sees and every agent's `team_future` and scarcity features change),
+not from its parameters. The strict same-set criterion is therefore not attainable for this
+policy on this field; the reward delta (net value) and ``max_lost`` are the operational
+reading. A variant that moves the collection to a different satellite or step would need
+the policy to react to small parameter changes, which it does not; the lever it does react
+to is where the point sits relative to idle passes, which a larger location radius or a
+different request time would exercise (not tried).
+
+**Consequences.** `sarsat.forecast`, `sarsat.recommend` and `sarsat.live.Preview` are names
+sarsat-live imports (CLAUDE.md). Released as 0.4.0. The reference planners forecast too
+(`"coop_plan"` rebuilt from the current state: its precompute is the cost, ~80 s at 500
+satellites), so a planner's schedule can be set beside the learner's. The strip shows only
+captures (looks without a capture are counted, not drawn). Not done: splitting a request,
+forecasting across the episode boundary (the next episode's field is drawn at the boundary),
+a quality-aware reach test for the candidates (the forecast catches what it misses).

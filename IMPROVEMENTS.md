@@ -5,7 +5,8 @@ the environment small; each item notes where it would plug in. Issue numbers ref
 [DECISIONS.md](DECISIONS.md). When an item gets built, move it out of this file and into
 the DECISIONS issue that builds it.
 
-Already built, for reference: Walker-style planes (`sample_planes`, issue 22),
+Already built, for reference: collection modes (`sarsat/modes.py`, issue 31),
+Walker-style planes (`sample_planes`, issue 22),
 time-windowed event targets (`sarsat/windows.py`, issue 24), a compact global state for
 centralised critics (`CoopSarSat`, issue 23), per-satellite credit assignment
 (`credit_mix`, issue 23), trained-policy evaluation (`mapx_integration/eval_checkpoint.py`)
@@ -41,8 +42,16 @@ and GPU throughput measurements (issues 23 and 27).
   the previous pointing to the state and the observation.
 * **True rectangular footprint.** The beam is a box in az/el space, whose azimuth extent
   shrinks by `cos(el)` away from nadir.
-* **Image quality.** Reward scaled by range, incidence angle or resolution; probabilistic
-  detection; imaging modes with different swath / energy trade-offs.
+* **Image quality.** Collection modes with a fixed quality each exist (issue 31), but
+  targets do not require any quality yet (the `_required_quality` hook returns `None`).
+  Still missing: requirements on targets, quality that varies with range or incidence
+  inside a mode's band, reward scaled by quality, probabilistic detection.
+* **Look duration.** Each `SensorMode` records `duration_s`, but every look is a snapshot
+  (issue 7). Simulating it would let a long look span several steps and block the
+  satellite meanwhile.
+* **Mode-aware cooperative observation and references.** `CoopSarSat` and the reference
+  policies refuse more than one mode (issue 31). Their beam slots and look choices would
+  need a per-mode footprint and band.
 * **Oblate Earth and terrain.** The Earth is a sphere of radius 6371 km and targets sit
   at sea level.
 
