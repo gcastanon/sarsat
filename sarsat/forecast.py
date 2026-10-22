@@ -190,13 +190,17 @@ def forecast(
     policy: Policy,
     horizon: Optional[int] = None,
     advance: Optional[Callable] = None,
+    progress: Optional[Callable[[int, int], None]] = None,
+    progress_every: int = 10,
 ) -> Forecast:
     """Play ``policy`` forward from ``state`` / ``obs`` to the end of the episode (or for
     ``horizon`` steps, whichever comes first) and record what it collects.
 
     ``state`` and ``obs`` are not modified (JAX states are immutable) and the policy is left
     as found (:func:`preserved`). ``advance`` lets a caller reuse one compiled step function
-    across forecasts (:func:`advance_fn`); by default one is compiled per call."""
+    across forecasts (:func:`advance_fn`); by default one is compiled per call. ``progress``,
+    if given, is called every ``progress_every`` steps and at the end with ``(steps done,
+    steps to do)``, for a caller that shows how far a long forecast has got."""
     t0 = time.perf_counter()
     advance = advance or advance_fn(env)
     act = act_fn(env, state, policy)
@@ -208,7 +212,9 @@ def forecast(
 
     steps, sensing, modes, captures, cmodes, rewards, batteries = [], [], [], [], [], [], []
     with preserved(policy):
-        for _ in range(remaining):
+        for i in range(remaining):
+            if progress is not None and i and i % progress_every == 0:
+                progress(i, remaining)
             action = act(state, obs)
             state, obs, reward, sense, mode, in_beam = advance(state, action)
             step = int(state.step)
@@ -222,6 +228,8 @@ def forecast(
             if sats.size:
                 captures.append(np.stack([np.full_like(slots, step), slots, sats], axis=1))
                 cmodes.append(mode[sats])
+    if progress is not None:
+        progress(remaining, remaining)
     n = int(env.num_agents)
     return Forecast(
         start_step=start,

@@ -30,7 +30,7 @@ import itertools
 import math
 import time
 from dataclasses import dataclass, field
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import jax.numpy as jnp
 import numpy as np
@@ -132,6 +132,7 @@ class Recommender:
         max_results: int = 3,
         max_changes: int = 2,
         max_lost: int = 0,
+        progress: Optional[Callable[[Dict[str, Any]], None]] = None,
     ) -> None:
         unknown = set(allow) - set(DEGREES_OF_FREEDOM)
         if unknown:
@@ -145,6 +146,10 @@ class Recommender:
         self.max_results = int(max_results)
         self.max_changes = int(max_changes)
         self.max_lost = int(max_lost)
+        # Called as the search goes: {"stage": "variant", "done", "budget", "candidates",
+        # "changes", "found"} before each confirming forecast, and {"stage": "step", "done",
+        # "total"} every few steps inside one (through ``LiveWorld.whatif``).
+        self.progress = progress
 
     # ------------------------------------------------------------- generate
 
@@ -294,6 +299,11 @@ class Recommender:
             return result
 
         ranked = self.rank(self.variants(preview), base)
+        steps = None
+        if self.progress is not None:
+            steps = lambda done, total: self.progress(  # noqa: E731
+                {"stage": "step", "done": done, "total": total}
+            )
         result["candidates"] = len(ranked)
         r = preview.request
         for v in ranked:
@@ -309,7 +319,18 @@ class Recommender:
                 place=r.place,
                 quality=v.quality,
             )
-            out = w.whatif(self.policy, alt, base)
+            if self.progress is not None:
+                self.progress(
+                    {
+                        "stage": "variant",
+                        "done": forecasts,
+                        "budget": self.max_forecasts,
+                        "candidates": len(ranked),
+                        "changes": list(v.changes),
+                        "found": len(result["alternatives"]),
+                    }
+                )
+            out = w.whatif(self.policy, alt, base, progress=steps)
             forecasts += 1
             v.whatif = summary(out)
             v.confirmed = acceptable(out, self.max_lost)

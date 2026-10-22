@@ -33,7 +33,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import asdict, dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import jax
 import jax.numpy as jnp
@@ -569,6 +569,7 @@ class LiveWorld:
         policy: Any,
         preview: Optional[Preview] = None,
         horizon: Optional[int] = None,
+        progress: Optional[Callable[[int, int], None]] = None,
     ) -> Forecast:
         """What ``policy`` collects from here to the end of the episode if nothing else
         changes; with ``preview``, from the world as it would be with that request in it.
@@ -576,7 +577,9 @@ class LiveWorld:
         if self._jit_forecast_advance is None:
             self._jit_forecast_advance = advance_fn(self.env)
         state, obs = (self.state, self.obs) if preview is None else (preview.state, preview.obs)
-        return forecast(self.env, state, obs, policy, horizon, self._jit_forecast_advance)
+        return forecast(
+            self.env, state, obs, policy, horizon, self._jit_forecast_advance, progress=progress
+        )
 
     def schedule(self, fc: Forecast, preview: Optional[Preview] = None) -> Dict[str, Any]:
         """The forecast read as a schedule: every capture with what it is (a request, an
@@ -714,7 +717,11 @@ class LiveWorld:
         }
 
     def whatif(
-        self, policy: Any, preview: Preview, base: Optional[Forecast] = None
+        self,
+        policy: Any,
+        preview: Preview,
+        base: Optional[Forecast] = None,
+        progress: Optional[Callable[[int, int], None]] = None,
     ) -> Dict[str, Any]:
         """The schedule with ``preview``'s request in the world against the schedule without
         it (``base``, forecast here when not given). ``items`` lists every request, event
@@ -723,8 +730,8 @@ class LiveWorld:
         another step, by another satellite or in another mode); ``same_set`` says whether the
         set of collected targets is unchanged, which is the operational meaning of "no
         impact" (a shift is flagged, not counted against it)."""
-        base = self.forecast(policy) if base is None else base
-        alt = self.forecast(policy, preview)
+        base = self.forecast(policy, progress=progress) if base is None else base
+        alt = self.forecast(policy, preview, progress=progress)
         base_sched = self.schedule(base)
         alt_sched = self.schedule(alt, preview)
         d = diff(base, alt)
