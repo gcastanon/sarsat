@@ -303,3 +303,106 @@ def test_request_carries_its_quality_into_the_cluster() -> None:
     assert r.to_dict()["quality"] == 7.0
     with pytest.raises(ValueError):
         LiveWorld(_env(), seed=SEED).inject_request(10.0, 20.0, quality=7.0)
+
+
+# ------------------------------------------------------- forecasting (issue 40)
+
+
+def _state_equal(a, b):
+    for name, x, y in zip(a._fields, a, b, strict=True):
+        for lx, ly in zip(jax.tree.leaves(x), jax.tree.leaves(y), strict=True):
+            np.testing.assert_array_equal(lx, ly, err_msg=name)
+
+
+def test_preview_then_commit_is_inject() -> None:
+    """A previewed request leaves the world alone; committing it gives the world
+    ``inject_request`` would have, and a preview the world has moved past is refused."""
+    env = _env()
+    a, b = LiveWorld(env, seed=SEED), LiveWorld(env, seed=SEED)
+    for i in range(2):
+        act = _actions(env, jax.random.PRNGKey(900 + i), sense=False)
+        a.step(act)
+        b.step(act)
+    before = b.state
+    preview = b.preview_request(10.0, 20.0, "high", 12, text="t")
+    assert preview.request.status == "provisional" and b.requests == []
+    _state_equal(b.state, before)
+    ra = a.inject_request(10.0, 20.0, "high", 12, text="t")
+    rb = b.commit_request(preview)
+    assert rb.status == "pending" and rb.to_dict() == ra.to_dict()
+    _state_equal(a.state, b.state)
+    assert a.cluster_windows().tolist() == b.cluster_windows().tolist()
+    with pytest.raises(ValueError):
+        b.commit_request(preview)  # already committed
+    stale = a.preview_request(0.0, 0.0)
+    a.step(_actions(env, jax.random.PRNGKey(950), sense=False))
+    with pytest.raises(ValueError):
+        a.commit_request(stale)
+
+
+def test_forecast_is_what_happens() -> None:
+    """The forecast of a reference policy from mid-episode, with a pending request, is
+    exactly what stepping the world with that policy then produces; the world and the
+    schedule's request fate agree; the forecast changed nothing."""
+    from sarsat.reference import ReferenceController
+
+    env = _env()
+    world = LiveWorld(env, seed=SEED)
+    for i in range(3):
+        world.step(_actions(env, jax.random.PRNGKey(800 + i), sense=False))
+    latlon, _ = _feasible_point(world, None, 10)
+    request = world.inject_request(*latlon, "high", 10)
+    before, before_global = world.state, world.global_step
+
+    fc = world.forecast("greedy_beam")
+    _state_equal(world.state, before)
+    assert world.global_step == before_global
+    assert fc.start_step == 3 and fc.end_step == T
+    sched = world.schedule(fc)
+    assert sched["captures"] == len(fc.captures) == len(sched["rows"])
+    assert {r["kind"] for r in sched["rows"]} <= {"request", "event", "background"}
+    fate = sched["requests"][0]
+    assert fate["request"] == request.id and fate["outcome"] in ("collected", "missed", "open")
+
+    controller = ReferenceController(env, world.state, "greedy_beam")
+    realized = []
+    while int(world.state.step) < T:
+        res = world.step(controller(world.state))
+        realized += [(res.step, int(t), int(s)) for t, s in res.captures]
+        if res.new_episode:
+            break
+    np.testing.assert_array_equal(fc.captures, np.array(realized, int).reshape(-1, 3))
+    if fate["outcome"] == "collected":
+        assert request.status == "collected"
+        assert request.collected_global == fate["global_step"]
+        assert request.collected_by == fate["by"]
+    elif fate["outcome"] == "missed":
+        assert request.status == "missed"
+    else:
+        assert request.status == "pending"
+
+
+def test_whatif_compares_the_world_with_and_without_a_request() -> None:
+    env = _env()
+    world = LiveWorld(env, seed=SEED)
+    for i in range(2):
+        world.step(_actions(env, jax.random.PRNGKey(850 + i), sense=False))
+    latlon, _ = _feasible_point(world, None, 10)
+    preview = world.preview_request(*latlon, "high", 10)
+    before = world.state
+    base = world.forecast("greedy_beam")
+    out = world.whatif("greedy_beam", preview, base)
+    _state_equal(world.state, before)
+    assert out["request"]["id"] == preview.request.id
+    assert out["request_fate"]["request"] == preview.request.id
+    assert set(out) >= {"base", "alt", "items", "same_set", "lost", "gained", "shifted"}
+    assert out["same_set"] == (out["lost"] == 0 and out["gained"] == 0)
+    for item in out["items"]:
+        assert item["kind"] in ("request", "event", "background")
+        assert item["change"] in ("lost", "gained", "shifted", "mixed")
+    # The provisional request's own slots are not counted as "gained".
+    new_slots = set((preview.request.cluster + world.C * np.arange(world.K)).tolist())
+    assert not any(i["kind"] == "background" and i["id"] in new_slots for i in out["items"])
+    # Without the request the alternative is the base: nothing changes.
+    same = world.whatif("greedy_beam", preview, base)
+    assert same["base"]["captures"] == base.captures.shape[0]

@@ -40,6 +40,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from sarsat.evaluate import beam_directions, ecef_to_latlon, ray_ground_point
+from sarsat.forecast import Forecast, advance_fn, diff, forecast
 from sarsat.orbits import EARTH_RADIUS_KM, EARTH_ROTATION_RAD_S, satellite_frames
 from sarsat.targets import latlon_to_unit_vector
 from sarsat.types import Orbit
@@ -70,7 +71,7 @@ class Request:
     cluster: int  # cluster slot it occupies in the current episode
     text: str = ""
     place: str = ""
-    status: str = "pending"  # pending | collected | missed
+    status: str = "pending"  # provisional | pending | collected | missed
     quality: Optional[float] = None  # image quality required (quality envs); None: any look
     collected_global: Optional[int] = None
     collected_by: Optional[int] = None
@@ -80,6 +81,19 @@ class Request:
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
+
+
+@dataclass
+class Preview:
+    """A provisional request (``status == "provisional"``) with the world state it would
+    produce: what a forecast of the request runs on, and what :meth:`LiveWorld.commit_request`
+    puts into the world. Built by :meth:`LiveWorld.preview_request`."""
+
+    request: Request
+    state: Any
+    obs: Any
+    window: Tuple[int, int]  # in-episode window the request's cluster was given
+    global_step: int  # the world's global step when it was built; stale once that moves
 
 
 @dataclass
@@ -188,6 +202,7 @@ class LiveWorld:
         self._jit_refresh_observe = jax.jit(self._refresh_observe)
         self._jit_observe = jax.jit(env.observe)
         self._jit_access = jax.jit(self._point_access_steps)
+        self._jit_forecast_advance = None  # compiled on the first forecast
 
         # Episode 0 is exactly ``env.reset(PRNGKey(seed))``, as the offline evaluations are.
         self.state, timestep = self._jit_reset(self.key)
@@ -464,7 +479,7 @@ class LiveWorld:
             state = state._replace(target_quality=state.target_quality.at[idx].set(quality))
         return env.refresh(state)
 
-    def inject_request(
+    def preview_request(
         self,
         lat: float,
         lon: float,
@@ -473,9 +488,11 @@ class LiveWorld:
         text: str = "",
         place: str = "",
         quality: Optional[float] = None,
-    ) -> Request:
-        """Add a request at ``(lat, lon)`` to be imaged within ``deadline_steps`` steps, in a
-        quality environment by a look of at least ``quality`` (``None``: any mode will do)."""
+    ) -> Preview:
+        """Build the request and the world state it would produce, without changing the
+        world: the provisional request a forecast can be run on (:meth:`forecast` with
+        ``preview.state`` / ``preview.obs``). :meth:`commit_request` makes it real; the
+        field is deterministic, so the committed world is exactly the previewed one."""
         if priority not in PRIORITY_WEIGHT:
             raise ValueError(f"priority must be one of {sorted(PRIORITY_WEIGHT)}")
         if quality is not None and not self._has_quality:
@@ -494,6 +511,7 @@ class LiveWorld:
             cluster=c,
             text=text,
             place=place,
+            status="provisional",
             quality=None if quality is None else float(quality),
         )
         feas = self.feasibility(lat, lon, deadline)
@@ -505,11 +523,305 @@ class LiveWorld:
         window = jnp.array([step + 1, close], jnp.int32)
         quality = jnp.float32(r.quality or 0.0)
         state = self._jit_inject(self.state, jnp.int32(c), latlon, weight, window, quality)
-        self.state, self.obs = state, self._jit_observe(state)
-        self._windows[c] = (step + 1, close)
-        self._cluster_request[c] = r.id
+        return Preview(r, state, self._jit_observe(state), (step + 1, close), self.global_step)
+
+    def commit_request(self, preview: Preview) -> Request:
+        """Put a previewed request into the world. The world must not have moved since the
+        preview (``global_step``), or the window and cluster it was built for are stale."""
+        if preview.global_step != self.global_step:
+            raise ValueError(
+                f"preview built at global step {preview.global_step}, world is at "
+                f"{self.global_step}: preview it again"
+            )
+        r = preview.request
+        if r.status != "provisional":
+            raise ValueError("this preview was already committed")
+        r.status = "pending"
+        self.state, self.obs = preview.state, preview.obs
+        self._windows[r.cluster] = preview.window
+        self._cluster_request[r.cluster] = r.id
         self.requests.append(r)
         return r
+
+    def inject_request(
+        self,
+        lat: float,
+        lon: float,
+        priority: str = "normal",
+        deadline_steps: int = MAX_DEADLINE_STEPS,
+        text: str = "",
+        place: str = "",
+        quality: Optional[float] = None,
+    ) -> Request:
+        """Add a request at ``(lat, lon)`` to be imaged within ``deadline_steps`` steps, in a
+        quality environment by a look of at least ``quality`` (``None``: any mode will do).
+        :meth:`preview_request` followed by :meth:`commit_request`."""
+        return self.commit_request(
+            self.preview_request(lat, lon, priority, deadline_steps, text, place, quality)
+        )
+
+    # ------------------------------------------------------------------ #
+    # Forecasting (sarsat.forecast; DECISIONS.md issue 40)
+    # ------------------------------------------------------------------ #
+
+    def forecast(
+        self,
+        policy: Any,
+        preview: Optional[Preview] = None,
+        horizon: Optional[int] = None,
+    ) -> Forecast:
+        """What ``policy`` collects from here to the end of the episode if nothing else
+        changes; with ``preview``, from the world as it would be with that request in it.
+        Neither the world nor the policy is changed (``sarsat.forecast.preserved``)."""
+        if self._jit_forecast_advance is None:
+            self._jit_forecast_advance = advance_fn(self.env)
+        state, obs = (self.state, self.obs) if preview is None else (preview.state, preview.obs)
+        return forecast(self.env, state, obs, policy, horizon, self._jit_forecast_advance)
+
+    def schedule(self, fc: Forecast, preview: Optional[Preview] = None) -> Dict[str, Any]:
+        """The forecast read as a schedule: every capture with what it is (a request, an
+        event cluster, a background target), where and by whom; the fate of every pending
+        request (and of ``preview``'s); and each event cluster's imaged fraction.
+
+        Request fates follow :meth:`_update_requests`: collected at the first step its
+        centre slot is imaged, or at which half of its cluster has been; missed when its
+        window closes inside the forecast without that; ``open`` when the window outlives
+        the episode (the next episode decides). Steps are global."""
+        s = self.state if preview is None else preview.state
+        latlon = np.asarray(s.target_latlon)
+        active0 = np.asarray(s.target_active)
+        priority = np.asarray(s.target_priority)
+        unit = float(priority.max()) if priority.size else 1.0
+        quality = np.asarray(s.target_quality) if self._has_quality else None
+        offset = self.global_step - int(s.step)  # global = in-episode + offset
+        requests = list(self.pending_requests)
+        if preview is not None:
+            requests.append(preview.request)
+        by_cluster = {r.cluster: r for r in requests}
+        mode_names = [m.name for m in self.env.modes] if self.env._mode_flags else None
+
+        rows = []
+        for (step, slot, sat), mode in zip(fc.captures, fc.capture_mode, strict=True):
+            slot, step, sat, mode = int(slot), int(step), int(sat), int(mode)
+            cluster = slot % self.C if slot < self.C * self.K else -1
+            req = by_cluster.get(cluster)
+            row = {
+                "step": step,
+                "global_step": step + offset,
+                "slot": slot,
+                "kind": "request" if req else ("event" if cluster >= 0 else "background"),
+                "cluster": cluster if cluster >= 0 else None,
+                "request": req.id if req else None,
+                "lat": round(float(latlon[slot, 0]), 4),
+                "lon": round(float(latlon[slot, 1]), 4),
+                "weight": round(float(priority[slot] / unit), 4),
+                "satellite": sat,
+                "mode": mode if mode >= 0 else None,
+                "mode_name": mode_names[mode] if mode_names and mode >= 0 else None,
+            }
+            if quality is not None:
+                row["quality"] = round(float(quality[slot]), 2)
+            rows.append(row)
+
+        # Per-cluster capture history: slots imaged before the forecast, and in it by step.
+        first = fc.first_capture()
+        cluster_caps: Dict[
+            int, List[Tuple[int, int, int, int]]
+        ] = {}  # c -> (step, slot, sat, mode)
+        for slot, (step, sat, mode) in first.items():
+            if slot < self.C * self.K:
+                cluster_caps.setdefault(slot % self.C, []).append((step, slot, sat, mode))
+        for caps in cluster_caps.values():
+            caps.sort()
+
+        fates = []
+        for r in requests:
+            c = r.cluster
+            slots = c + self.C * np.arange(self.K)
+            inactive = int((~active0[slots]).sum())
+            caps = cluster_caps.get(c, [])
+            fate: Dict[str, Any] = {
+                "request": r.id,
+                "status": r.status,
+                "cluster": c,
+                "close_global": r.close_global,
+                "collected": False,
+                "step": None,
+                "global_step": None,
+                "by": None,
+                "mode": None,
+                "mode_name": None,
+                "outcome": "open",
+            }
+            for step, slot, sat, mode in caps:
+                inactive += 1
+                if slot == c or inactive >= self.K / 2:
+                    fate.update(
+                        collected=True,
+                        step=step,
+                        global_step=step + offset,
+                        by=sat,
+                        mode=mode if mode >= 0 else None,
+                        mode_name=mode_names[mode] if mode_names and mode >= 0 else None,
+                        outcome="collected",
+                    )
+                    break
+            if not fate["collected"]:
+                close_step = r.close_global - offset
+                if close_step <= fc.end_step:
+                    fate["outcome"] = "missed"
+            fates.append(fate)
+
+        events = []
+        for c in range(self.C):
+            if c in by_cluster:
+                continue
+            slots = c + self.C * np.arange(self.K)
+            before = int((~active0[slots]).sum())
+            caps = cluster_caps.get(c, [])
+            open_, close = (int(x) for x in self._windows[c])
+            events.append(
+                {
+                    "cluster": c,
+                    "window": [open_, close],
+                    "window_global": [open_ + offset, close + offset],
+                    "lat": round(float(latlon[slots[0]][0]), 4),
+                    "lon": round(float(latlon[slots[0]][1]), 4),
+                    "imaged_before": before / self.K,
+                    "imaged_forecast": len(caps) / self.K,
+                    "imaged": (before + len(caps)) / self.K,
+                    "first_step": caps[0][0] + offset if caps else None,
+                    "last_step": caps[-1][0] + offset if caps else None,
+                    "satellites": sorted({sat for _, _, sat, _ in caps}),
+                }
+            )
+
+        looks = fc.sensing.sum(axis=0)
+        return {
+            "start_global": self.global_step,
+            "start_step": fc.start_step,
+            "end_step": fc.end_step,
+            "episode": self.episode,
+            "horizon": fc.horizon,
+            "reward": float(fc.reward.sum()),
+            "captures": len(rows),
+            "looks": int(looks.sum()),
+            "looks_by_satellite": {int(n): int(k) for n, k in enumerate(looks) if k},
+            "rows": rows,
+            "requests": fates,
+            "events": events,
+            "seconds": round(fc.seconds, 2),
+        }
+
+    def whatif(
+        self, policy: Any, preview: Preview, base: Optional[Forecast] = None
+    ) -> Dict[str, Any]:
+        """The schedule with ``preview``'s request in the world against the schedule without
+        it (``base``, forecast here when not given). ``items`` lists every request, event
+        cluster and background target whose fate differs, with ``change`` ``lost`` (collected
+        without the request, not with it), ``gained``, or ``shifted`` (collected in both, at
+        another step, by another satellite or in another mode); ``same_set`` says whether the
+        set of collected targets is unchanged, which is the operational meaning of "no
+        impact" (a shift is flagged, not counted against it)."""
+        base = self.forecast(policy) if base is None else base
+        alt = self.forecast(policy, preview)
+        base_sched = self.schedule(base)
+        alt_sched = self.schedule(alt, preview)
+        d = diff(base, alt)
+        new_slots = set((preview.request.cluster + self.C * np.arange(self.K)).tolist())
+
+        def describe(slot, cap):
+            if cap is None:
+                return None
+            step, sat, mode = cap
+            return {
+                "step": step,
+                "global_step": step + (self.global_step - int(self.state.step)),
+                "by": sat,
+                "mode": mode if mode >= 0 else None,
+            }
+
+        items = []
+        base_fates = {f["request"]: f for f in base_sched["requests"]}
+        alt_fates = {f["request"]: f for f in alt_sched["requests"]}
+        for rid, bf in base_fates.items():
+            af = alt_fates[rid]
+            if (bf["collected"], bf["global_step"], bf["by"], bf["mode"]) != (
+                af["collected"],
+                af["global_step"],
+                af["by"],
+                af["mode"],
+            ):
+                change = (
+                    "lost"
+                    if bf["collected"] and not af["collected"]
+                    else ("gained" if af["collected"] and not bf["collected"] else "shifted")
+                )
+                items.append(
+                    {"kind": "request", "id": rid, "change": change, "base": bf, "alt": af}
+                )
+        base_events = {e["cluster"]: e for e in base_sched["events"]}
+        alt_events = {e["cluster"]: e for e in alt_sched["events"]}
+        for c in sorted(set(base_events) | set(alt_events)):
+            be, ae = base_events.get(c), alt_events.get(c)
+            if be is None or ae is None:
+                continue  # the cluster the request takes over (it had nothing left)
+            slots = set((c + self.C * np.arange(self.K)).tolist())
+            lost = sorted(slots & set(d.lost))
+            gained = sorted(slots & set(d.gained))
+            shifted = sorted(slots & set(d.shifted))
+            if lost or gained or shifted:
+                change = (
+                    "lost"
+                    if lost and not gained
+                    else ("gained" if gained and not lost else ("mixed" if lost else "shifted"))
+                )
+                items.append(
+                    {
+                        "kind": "event",
+                        "id": c,
+                        "change": change,
+                        "base": be,
+                        "alt": ae,
+                        "lost": len(lost),
+                        "gained": len(gained),
+                        "shifted": len(shifted),
+                    }
+                )
+        for slot in sorted((set(d.lost) | set(d.gained) | set(d.shifted)) - new_slots):
+            if slot < self.C * self.K:
+                continue  # covered above
+            change = "lost" if slot in d.lost else ("gained" if slot in d.gained else "shifted")
+            bcap = base.first_capture().get(slot)
+            acap = alt.first_capture().get(slot)
+            latlon = np.asarray(self.state.target_latlon)[slot]
+            items.append(
+                {
+                    "kind": "background",
+                    "id": slot,
+                    "change": change,
+                    "lat": round(float(latlon[0]), 4),
+                    "lon": round(float(latlon[1]), 4),
+                    "base": describe(slot, bcap),
+                    "alt": describe(slot, acap),
+                }
+            )
+
+        lost_slots = set(d.lost) - new_slots
+        gained_slots = set(d.gained) - new_slots
+        request_fate = next(f for f in alt_sched["requests"] if f["request"] == preview.request.id)
+        return {
+            "request": preview.request.to_dict(),
+            "request_fate": request_fate,
+            "base": base_sched,
+            "alt": alt_sched,
+            "items": items,
+            "same_set": not lost_slots and not gained_slots,
+            "lost": len(lost_slots),
+            "gained": len(gained_slots),
+            "shifted": len(set(d.shifted) - new_slots),
+            "reward_delta": round(float(alt.reward.sum() - base.reward.sum()), 4),
+        }
 
     def _point_access_steps(self, orbit: Orbit, point: jax.Array, steps: jax.Array) -> jax.Array:
         return jax.vmap(lambda s: self.env._point_access(orbit, point[None], s))(steps)[..., 0]
