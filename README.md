@@ -158,7 +158,7 @@ sarsat release (DECISIONS issues 28 and 29).
 
 | Path | What it holds |
 |---|---|
-| `sarsat/` | the environment package: `env.py` (`SarSat`), `modes.py` (collection modes), `orbits.py`, `targets.py`, `coop.py` (`CoopSarSat`), `windows.py` (time-windowed events), `announce.py` (announced requests), `reference.py` (reference policies), `evaluate.py` (logs and viewer), `live.py` (rolling-episode world for the live demo) |
+| `sarsat/` | the environment package: `env.py` (`SarSat`), `modes.py` (collection modes), `orbits.py`, `targets.py`, `coop.py` (`CoopSarSat`), `windows.py` (time-windowed events), `announce.py` (announced requests), `reference.py` (reference policies), `evaluate.py` (logs and viewer), `live.py` (rolling-episode world for the live demo), `forecast.py` (the rest of an episode under a policy, and diffs of forecasts), `recommend.py` (variants of a request the policy collects at no cost to the rest) |
 | `tests/` | the test suite (`pytest -q`) |
 | `mapx_integration/` | training and evaluation with MAPX: launch scripts, wrappers, network, Hydra configs, Runpod run plans |
 | `scripts/` | baselines, scenario sweeps, benchmarks, report and viewer export tools |

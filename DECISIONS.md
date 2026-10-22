@@ -1593,3 +1593,89 @@ satellites, CPU).
 former behaviour is one constructor argument away. `tests/test_live.py` pins the field to
 the point and the determinism across worlds. The RNG stream of `LiveWorld` is no longer
 advanced by requests, so episode draws after a request are the same as without it.
+
+## Issue 40 - Forecasting the rest of the episode, what-if on a provisional request, and alternatives
+
+**Question.** The demo shows the policy acting; an operator also wants to see what it is
+*going* to do: what will be collected by the end of the episode if nothing changes, what a
+request they are about to submit would change, and how to change that request so it fits
+without displacing anything. Where does that live, and how exact can it be?
+
+**Decision.** Three layers, the first two here, the view in sarsat-live.
+
+* `sarsat.forecast.forecast(env, state, obs, policy, horizon)` plays the policy forward from
+  the current state to the episode end (or ``horizon`` steps) and records every capture
+  (step, slot, satellite, mode), look, reward and battery. Inside an episode the transition
+  is deterministic and the greedy policy is a function of its observation and carried state,
+  so the forecast is exact (`tests/test_forecast.py` pins it to `run_episode`; `tests/
+  test_live.py` and sarsat-live's `tests/test_policy.py` pin it to what the live world then
+  does). The policy is left as found: a policy that owns state exposes `snapshot()` /
+  `restore()` (sarsat-live's `TrainedPolicy` returns its GRU carry; JAX arrays are
+  immutable), a plain function has nothing to preserve, a reference policy named by its
+  string is rebuilt from the current state. A stateful policy without `snapshot` is refused.
+  `diff(base, alt)` compares two forecasts slot by slot: lost, gained, shifted (another step,
+  satellite or mode), same.
+* `LiveWorld.preview_request(...)` builds a request and the world state it would produce
+  without touching the world (a `Preview`; the request's status is ``provisional``);
+  `commit_request(preview)` puts exactly that state in (refused if the world has moved since,
+  so the field committed is the field forecast; this is why requests have no scatter, issue
+  39). `inject_request` is the two in a row. `forecast(policy, preview=None)` forecasts the
+  world or the previewed one; `schedule(fc)` reads a forecast as a table (every capture with
+  its kind, request or event, position, weight, satellite, mode; each pending request's fate
+  by the rule of `_update_requests`: collected at a step by a satellite, missed, or open past
+  the episode; each event cluster's imaged fraction before and within the forecast and by
+  whom); `whatif(policy, preview, base)` is the schedule with the request against the one
+  without, with every request, event and background target whose fate differs listed as
+  lost, gained or shifted. "No impact" means the *set* of collected targets is unchanged
+  (``same_set``); a shift in step or satellite is flagged, not counted (user, 2026-10-21).
+* `sarsat.recommend.Recommender(world, policy, allow, ...)` finds variants of a provisional
+  request the policy collects with the set of other collected targets unchanged. Generate:
+  one or two of deadline (later, in 5-step increments to the 30-step cap or the episode
+  end), priority (the other two), quality (each lower mode's, then any) and location (8
+  bearings at 25 and 50 km); a variant is a candidate if some satellite can reach its point
+  (the cheapest mode's geometry, as `feasibility`) at a step inside its window at which the
+  base forecast has that satellite idle and charged; a priority-only change is kept without
+  that test, since it changes what the policy wants, not what it can reach. Rank by number
+  of changes, then earliest idle pass, then more passes. Confirm: each candidate in order is
+  previewed and forecast (`whatif`), up to ``max_forecasts`` (6); it is an alternative if
+  collected with ``lost == 0`` (``max_lost`` relaxes that for a user who will trade). The
+  rejected ones are returned least damaging first. Splitting a request is not generated.
+* The world is paused while a what-if is open (the server's loop stops stepping; a forecast
+  is one policy step per forecast step and would otherwise fall behind its clock). The
+  forecast of the world as it is is cached per global step, recomputed on commit, and sent
+  to every client (``forecast`` message); the page's Schedule tab shows it (captures per
+  step by kind, a satellite x step strip, request fates, events with imaged fractions and
+  satellites, every capture; sortable, filtered by satellite, latitude, longitude and kind)
+  and the map marks every target the forecast images (hover: when and by whom). "What if"
+  on the request box runs the what-if; "Find alternatives" the recommender; "Submit this
+  request" commits the previewed field. sarsat-live DECISIONS issue 5.
+
+**Measured** (Windows CPU, one policy call plus one jitted step per forecast step).
+events500 from step 20: 160 steps in 13.1 s (82 ms/step), 11,554 captures; a what-if 13.8 s
+(one more forecast); the recommender 40 s for 3 forecasts. modes500 in the demo: 157 steps
+14.3 s, 131 steps 11.5 s, the schedule message about 1 MB.
+
+**Findings.** A request perturbs the whole plan, not only its neighbourhood. events500, a
+normal request with a 10-step deadline at a random land point: collected, and against the
+plan without it 21 captures lost, 21 gained, 44 shifted of 11,554. modes500 at step 49,
+"image Nairobi, high priority, within 25 minutes": collected at step 53 by satellite 442
+(spotlight); 30 lost, 23 gained, 97 shifted of 6,673, reward +0.0076; when submitted, the
+live world collected it at step 53 by satellite 442, as forecast. The recommender at
+``max_lost = 0`` found nothing: of 69 candidates, the 6 forecast (deadline +5, location
+moved 25-50 km) all gave the *identical* outcome -- the same collection step and satellite
+and the same 30/23/97 -- so the perturbation comes from the request's existence (50 new
+slots the look-ahead sees and every agent's `team_future` and scarcity features change),
+not from its parameters. The strict same-set criterion is therefore not attainable for this
+policy on this field; the reward delta (net value) and ``max_lost`` are the operational
+reading. A variant that moves the collection to a different satellite or step would need
+the policy to react to small parameter changes, which it does not; the lever it does react
+to is where the point sits relative to idle passes, which a larger location radius or a
+different request time would exercise (not tried).
+
+**Consequences.** `sarsat.forecast`, `sarsat.recommend` and `sarsat.live.Preview` are names
+sarsat-live imports (CLAUDE.md). Released as 0.4.0. The reference planners forecast too
+(`"coop_plan"` rebuilt from the current state: its precompute is the cost, ~80 s at 500
+satellites), so a planner's schedule can be set beside the learner's. The strip shows only
+captures (looks without a capture are counted, not drawn). Not done: splitting a request,
+forecasting across the episode boundary (the next episode's field is drawn at the boundary),
+a quality-aware reach test for the candidates (the forecast catches what it misses).

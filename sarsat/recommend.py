@@ -109,8 +109,12 @@ def summary(whatif: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def acceptable(whatif: Dict[str, Any]) -> bool:
-    return bool(whatif["request_fate"]["collected"]) and bool(whatif["same_set"])
+def acceptable(whatif: Dict[str, Any], max_lost: int = 0) -> bool:
+    """Collected, and no other collected target lost (``max_lost`` relaxes that: at most so
+    many lost, for a user who will trade; the default is the strict same-set test)."""
+    if not whatif["request_fate"]["collected"]:
+        return False
+    return bool(whatif["same_set"]) if max_lost <= 0 else int(whatif["lost"]) <= int(max_lost)
 
 
 class Recommender:
@@ -127,6 +131,7 @@ class Recommender:
         max_forecasts: int = 6,
         max_results: int = 3,
         max_changes: int = 2,
+        max_lost: int = 0,
     ) -> None:
         unknown = set(allow) - set(DEGREES_OF_FREEDOM)
         if unknown:
@@ -139,6 +144,7 @@ class Recommender:
         self.max_forecasts = int(max_forecasts)
         self.max_results = int(max_results)
         self.max_changes = int(max_changes)
+        self.max_lost = int(max_lost)
 
     # ------------------------------------------------------------- generate
 
@@ -280,8 +286,9 @@ class Recommender:
             "candidates": 0,
             "forecasts": 0,
             "allow": list(self.allow),
+            "max_lost": self.max_lost,
         }
-        if acceptable(original):
+        if acceptable(original, self.max_lost):
             result["verdict"] = "the request is collected as it is, at no cost to the rest"
             result["seconds"] = round(time.perf_counter() - t0, 2)
             return result
@@ -305,7 +312,7 @@ class Recommender:
             out = w.whatif(self.policy, alt, base)
             forecasts += 1
             v.whatif = summary(out)
-            v.confirmed = acceptable(out)
+            v.confirmed = acceptable(out, self.max_lost)
             if v.confirmed:
                 result["alternatives"].append(v.to_dict())
             else:
@@ -316,6 +323,14 @@ class Recommender:
                     v.reason = f"collected, but {out['lost']} other target(s) would be lost"
                 result["rejected"].append(v.to_dict())
         result["forecasts"] = forecasts
+        # The rejected variants, least damaging first, so a caller can see the near misses.
+        result["rejected"].sort(
+            key=lambda d: (
+                not d["whatif"]["request_fate"]["collected"],
+                d["whatif"]["lost"],
+                -d["whatif"]["gained"],
+            )
+        )
         if result["alternatives"]:
             result["verdict"] = f"{len(result['alternatives'])} way(s) to fit it in"
         elif result["untried"]:

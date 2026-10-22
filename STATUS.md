@@ -1,6 +1,6 @@
 # Status
 
-_Last updated: 2026-10-21 (issue 39). Read this first when picking the project up. Keep it
+_Last updated: 2026-10-21 (issue 40). Read this first when picking the project up. Keep it
 short and current: history lives in git, reasoning in DECISIONS.md, results in README.md._
 
 ## Where things live
@@ -9,7 +9,7 @@ short and current: history lives in git, reasoning in DECISIONS.md, results in R
 |---|---|---|
 | Source of truth | this git repository | pull at the start of a session, push at the end |
 | Overview and results | `README.md` | quick start, scenarios, the results table |
-| Design rationale | `DECISIONS.md` (issues 1-39) | append an issue for any non-obvious choice |
+| Design rationale | `DECISIONS.md` (issues 1-40) | append an issue for any non-obvious choice |
 | Codebase guide | `docs/index.html` | code map, data flow, experiment / training / evaluation walkthrough; update it when those change |
 | Deferred ideas | `IMPROVEMENTS.md` | move an item out when it is built |
 | Training | `mapx_integration/` | overlay files for a MAPX checkout, launch and evaluation scripts; see its README |
@@ -53,11 +53,17 @@ short and current: history lives in git, reasoning in DECISIONS.md, results in R
   server (60x real time, 83 ms per 500-satellite step on a Windows CPU), web UI and
   offline NL parser live in the `sarsat-live` repository, which drives `LiveWorld` from a
   sarsat release and reads the parameter snapshot from this checkout's `runs/`.
-  Environment-side changes for the demo are made here. Requests now occupy their cluster
-  as one point (`request_scatter=0`, issue 39), so a forecast of a provisional request and
-  its submission build the same field; measured indistinguishable from the former spread.
-  Next for the demo: a schedule/forecast view (what the policy will collect, what-if on a
-  provisional request), with the forecast primitive here and the tab in sarsat-live.
+  Environment-side changes for the demo are made here. Requests occupy their cluster as
+  one point (`request_scatter=0`, issue 39), so a forecast of a provisional request and its
+  submission build the same field.
+* **Forecasting** (issue 40). `sarsat.forecast` plays any policy forward to the episode end
+  (exact; the policy is left as found), `LiveWorld.preview_request` / `commit_request` /
+  `schedule` / `whatif` give the demo its Schedule tab and what-if, and `sarsat.recommend`
+  searches variants of a request (deadline, priority, quality, location) confirmed by
+  forecast. 82 ms per forecast step on the CPU (13 s for 160 steps of events500). Finding:
+  a request perturbs ~0.5% of the plan's captures whatever its parameters, so "collect it
+  without losing anything" is not attainable with this policy; the reward delta is the
+  honest reading. Released as 0.4.0 for sarsat-live.
 * **Tooling.** `python -m sarsat.evaluate` writes CSV logs and a self-contained HTML map
   viewer; `examples/` holds recorded episodes. The results deck
   `reports/sarsat_marl_results.html` is built by `scripts/collect_results.py` +
